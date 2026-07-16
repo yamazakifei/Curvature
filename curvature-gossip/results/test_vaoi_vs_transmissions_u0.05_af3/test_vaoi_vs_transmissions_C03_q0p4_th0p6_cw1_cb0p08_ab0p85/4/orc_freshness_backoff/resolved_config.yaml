@@ -1,5 +1,5 @@
 experiment:
-  id: test_vaoi_vs_transmissions_C05_q0p45_th0p6_cw1_cb0p08_ab0p8
+  id: test_vaoi_vs_transmissions_C03_q0p4_th0p6_cw1_cb0p08_ab0p85
   master_seed: 20260715
   slots: 1000
   warmup_slots: 50
@@ -57,7 +57,7 @@ policies:
   params:
     source_aggregation: max
     q_min: 0.01
-    q_max: 0.45
+    q_max: 0.4
     gain_compression: log1p
     gain_normalization: log_node_count
     threshold: 0.6
@@ -65,7 +65,7 @@ policies:
     age_weight: 0.003
     congestion_backoff_weight: 0.08
     congestion_ewma_alpha: 0.8
-    attempt_backoff_factor: 0.8
+    attempt_backoff_factor: 0.85
     curvature_weight: 1.0
 output:
   root: D:\ZMF\2026Curvature\curvature-gossip\results\test_vaoi_vs_transmissions_u0.05_af3
