@@ -26,7 +26,7 @@ from curvature_gossip.experiments import run_experiment
 
 BASE_CONFIG = PROJECT_ROOT / "configs" / "topo2_backoff_v2.yaml"
 GENERATED_CONFIG_DIR = PROJECT_ROOT / "configs" / "generated_sweeps"
-RESULT_ROOT = PROJECT_ROOT / "results" / "test_vaoi_vs_transmissions_u0.05_af3"
+RESULT_ROOT = PROJECT_ROOT / "results" / "test_vaoi_vs_transmissions_u0.2_af3"
 SWEEP_ID = "test_vaoi_vs_transmissions"
 
 TOPOLOGY_SEEDS = [0, 1, 2, 3, 4]
