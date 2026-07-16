@@ -1,0 +1,14 @@
+experiment:
+  id: random_geometric_example
+  master_seed: 7
+topology:
+  type: random_geometric
+  params:
+    n_nodes: 20
+    area_width_m: 100.0
+    area_height_m: 100.0
+    communication_radius_m: 40.0
+    max_attempts: 500
+output:
+  root: results
+

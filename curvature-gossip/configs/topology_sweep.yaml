@@ -1,0 +1,30 @@
+experiment:
+  id: topology_sweep
+  master_seed: 20260713
+  slots: 10000
+  warmup_slots: 1000
+  topology_seeds: [0, 1, 2, 3, 4]
+sweep:
+  bridge_edge_count: [1, 2, 4]
+  update_probability: [0.01, 0.05, 0.1, 0.2]
+  topology_type: [two_cluster_bridge, random_geometric, grid_2d, ring]
+topology:
+  type: two_cluster_bridge
+  params:
+    n_nodes: 40
+    cluster_sizes: [20, 20]
+    communication_radius_m: 110.0
+    center_separation_m: 253.0
+    bridge_edge_count: 1
+source:
+  update_probability: 0.05
+channel:
+  rayleigh_fading: true
+curvature:
+  method: global_orc
+policies:
+  - name: random
+    type: random
+    params: {tx_probability: 0.1}
+output:
+  root: results

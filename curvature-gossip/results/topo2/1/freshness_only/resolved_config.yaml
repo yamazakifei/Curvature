@@ -1,0 +1,75 @@
+experiment:
+  id: topo2
+  slots: 10000
+  warmup_slots: 100
+  trace_stride: 10
+  master_seed: 20260713
+  topology_seeds:
+  - 1
+  channel_seeds:
+  - 0
+  update_seeds:
+  - 0
+topology:
+  type: soft_two_community
+  params:
+    n_nodes: 50
+    cluster_sizes:
+    - 25
+    - 25
+    area_width_m: 260.0
+    area_height_m: 160.0
+    communication_radius_m: 40.0
+    cluster_radius_m: 70.0
+    center_separation_m: 120.0
+    min_degree: 3
+    require_induced_cluster_connected: true
+    min_edge_connectivity: 2
+    max_attempts: 2000
+source:
+  update_probability: 0.1
+channel:
+  tx_power_dbm: 20.0
+  pathloss_reference_db: 40.0
+  reference_distance_m: 1.0
+  pathloss_exponent: 3.0
+  shadowing_std_db: 4.0
+  reciprocal_shadowing: true
+  rayleigh_fading: true
+  noise_psd_dbm_per_hz: -174.0
+  bandwidth_hz: 5000000.0
+  noise_figure_db: 7.0
+  sinr_threshold_db: 0.0
+curvature:
+  method: global_orc
+  alpha: 0.5
+  normalization: global_negative_max
+policies:
+- name: random
+  type: random
+  params:
+    tx_probability: 0.1
+- name: freshness_only
+  type: freshness
+  params:
+    source_aggregation: max
+    q_min: 0.005
+    q_max: 0.1
+    threshold: 2.0
+    temperature: 1.0
+    age_weight: 0.005
+- name: orc_freshness
+  type: curvature_freshness
+  params:
+    source_aggregation: max
+    q_min: 0.005
+    q_max: 0.1
+    threshold: 2.0
+    temperature: 1.0
+    age_weight: 0.005
+    curvature_weight: 1.0
+output:
+  root: results
+  save_per_slot: true
+  make_plots: true
+  smoothing_window: 100

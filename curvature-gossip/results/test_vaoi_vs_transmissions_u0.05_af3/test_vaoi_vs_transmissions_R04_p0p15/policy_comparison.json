@@ -1,0 +1,24 @@
+[
+  {
+    "avg_tx_per_slot": 14.963578947368422,
+    "avg_tx_per_slot_ci95": 0.16957927987160681,
+    "completed_update_fraction": 0.9173244328792224,
+    "completed_update_fraction_ci95": 0.020964286041113157,
+    "independent_runs": 5,
+    "innovative_entries_per_tx": 17.223612978816103,
+    "innovative_entries_per_tx_ci95": 0.5517809197391601,
+    "mean_VAoI": 2.197223710792131,
+    "mean_VAoI_ci95": 0.11365627836471262,
+    "mean_dissemination_delay": 82.72443483269166,
+    "mean_dissemination_delay_ci95": 4.185066992352422,
+    "mean_max_VAoI": 10.610947368421051,
+    "mean_max_VAoI_ci95": 0.21206774377836535,
+    "mean_tail_VAoI": 7.445817756512495,
+    "mean_tail_VAoI_ci95": 0.38460064807988786,
+    "p95_max_VAoI": 14.8,
+    "p95_max_VAoI_ci95": 0.7333648478076925,
+    "policy": "random",
+    "successful_decodes_per_tx": 3.955854788905769,
+    "successful_decodes_per_tx_ci95": 0.08639248344328791
+  }
+]
