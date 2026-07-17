@@ -7,7 +7,9 @@ import numpy as np
 
 
 class LocalKnowledge:
-    def __init__(self, graph: nx.Graph) -> None:
+    def __init__(self, graph: nx.Graph, broadcast_limit: float = 1.0) -> None:
+        if not 0.0 < float(broadcast_limit) <= 1.0:
+            raise ValueError("broadcast_limit must be in (0, 1]")
         self.n_nodes = graph.number_of_nodes()
         # 简洁起见使用稠密数组；无效项由 valid 显式区分。
         self.neighbor_cache_estimate = np.zeros(
@@ -21,6 +23,9 @@ class LocalKnowledge:
         # 仅由节点静默时的本地能量检测更新，不依赖接收端 ACK。
         self.congestion_ewma = np.zeros(self.n_nodes, dtype=float)
         self.consecutive_tx_attempts = np.zeros(self.n_nodes, dtype=np.int64)
+        # 每个节点独立维护长期广播约束的虚拟债务，无需任何全局计数器。
+        self.broadcast_limit = np.full(self.n_nodes, float(broadcast_limit), dtype=float)
+        self.broadcast_debt = np.zeros(self.n_nodes, dtype=float)
         self._adjacency = nx.to_numpy_array(graph, nodelist=range(self.n_nodes), dtype=bool)
 
     def update_from_decodes(
@@ -53,6 +58,10 @@ class LocalKnowledge:
         self.previous_transmitted = transmitted.copy()
         self.consecutive_tx_attempts[transmitted] += 1
         self.consecutive_tx_attempts[~transmitted] = 0
+        self.broadcast_debt = np.maximum(
+            0.0,
+            self.broadcast_debt + transmitted.astype(float) - self.broadcast_limit,
+        )
 
         # 半双工发送节点无法在发射时可靠测量信道，故不向策略暴露该值。
         silent = ~transmitted

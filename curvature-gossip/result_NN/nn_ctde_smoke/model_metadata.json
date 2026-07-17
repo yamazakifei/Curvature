@@ -1,0 +1,14 @@
+{
+  "checkpoint": "result_NN\\nn_ctde_smoke\\checkpoints\\model",
+  "episodes": 2,
+  "node_counts": [
+    null
+  ],
+  "per_node_cap_multiplier": 1.5,
+  "target_tx_ratios": [
+    0.1
+  ],
+  "update_probabilities": [
+    null
+  ]
+}

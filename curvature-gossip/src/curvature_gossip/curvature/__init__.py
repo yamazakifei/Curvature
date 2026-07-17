@@ -3,9 +3,10 @@
 from .af3 import GlobalAF3Curvature
 from .base import CurvatureProvider, CurvatureResult, bottleneck_importance, canonical_edge
 from .global_orc import GlobalORCCurvature
+from .distributed import DistributedAF3Curvature
 
 __all__ = [
-    "CurvatureProvider", "CurvatureResult", "GlobalAF3Curvature", "GlobalORCCurvature",
-    "bottleneck_importance", "canonical_edge",
+    "CurvatureProvider", "CurvatureResult", "DistributedAF3Curvature",
+    "GlobalAF3Curvature", "GlobalORCCurvature", "bottleneck_importance",
+    "canonical_edge",
 ]
-

@@ -62,5 +62,12 @@ def bottleneck_importance(
             maximum = max(incident) if incident else 0.0
             output[edge] = value / maximum if maximum > 0 else 0.0
         return output
+    if normalization == "local_degree_bound":
+        # AF3 的最负局部结构下界为 4-deg(i)-deg(j)，因此无需全网最大值。
+        output = {}
+        for edge, value in raw.items():
+            i, j = edge
+            denominator = max(1, topology.graph.degree(i) + topology.graph.degree(j) - 4)
+            output[edge] = min(float(value) / float(denominator), 1.0)
+        return output
     raise ValueError("unknown curvature normalization: {}".format(normalization))
-

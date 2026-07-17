@@ -1,0 +1,14 @@
+{
+  "checkpoint": "result_NN\\nn_ctde_af3_n100\\checkpoints\\model",
+  "episodes": 300,
+  "node_counts": [
+    100
+  ],
+  "per_node_cap_multiplier": 1.5,
+  "target_tx_ratios": [
+    0.1
+  ],
+  "update_probabilities": [
+    0.05
+  ]
+}

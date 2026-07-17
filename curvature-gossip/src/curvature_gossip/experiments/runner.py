@@ -14,7 +14,7 @@ import yaml
 from ..channel import ChannelParameters, PropagationModel
 from ..config import ProjectConfig, load_config
 from ..curvature import (
-    CurvatureResult, GlobalAF3Curvature, GlobalORCCurvature,
+    CurvatureResult, DistributedAF3Curvature, GlobalAF3Curvature, GlobalORCCurvature,
     bottleneck_importance, canonical_edge,
 )
 from ..policies import create_policy
@@ -60,6 +60,8 @@ def _curvature_provider(config: Mapping[str, Any]):
         return GlobalORCCurvature(alpha=float(config.get("alpha", 0.5)))
     if method in ("af3", "global_af3"):
         return GlobalAF3Curvature()
+    if method == "distributed_af3":
+        return DistributedAF3Curvature()
     raise ValueError("unknown curvature method: {}".format(method))
 
 
@@ -208,6 +210,10 @@ def _aggregate(run_summaries: Sequence[Mapping[str, Any]]):
         "mean_VAoI", "mean_max_VAoI", "p95_max_VAoI", "mean_tail_VAoI",
         "avg_tx_per_slot", "successful_decodes_per_tx", "innovative_entries_per_tx",
         "completed_update_fraction", "mean_dissemination_delay",
+        "std_node_activity_ratio", "p95_node_activity_ratio",
+        "max_node_activity_ratio", "node_cap_violation_fraction",
+        "max_node_cap_violation", "curvature_control_message_count",
+        "curvature_control_payload_neighbor_ids",
     ]
     rows = []
     for policy_name in sorted({summary["policy"] for summary in run_summaries}):
@@ -246,6 +252,9 @@ def run_experiment(config_path: str, overwrite: bool = False, progress: bool = T
     update_probability = float(raw.get("source", {}).get("update_probability", 0.05))
     output = raw.get("output", {})
     node_diagnostics_stride = int(output.get("node_diagnostics_stride", 0))
+    constraints = raw.get("constraints", {})
+    target_tx_ratio = float(constraints.get("target_tx_ratio", 1.0))
+    per_node_cap_multiplier = float(constraints.get("per_node_cap_multiplier", 1.0))
     output_root = Path(output.get("root", "results"))
     experiment_directory = output_root / str(experiment.get("id", "experiment"))
     single_pair = len(channel_seeds) == 1 and len(update_seeds) == 1
@@ -272,6 +281,8 @@ def run_experiment(config_path: str, overwrite: bool = False, progress: bool = T
         warmup,
         trace_stride,
         node_diagnostics_stride,
+        target_tx_ratio,
+        per_node_cap_multiplier,
     )
     generator = get_topology_generator(config.topology.type)
 
@@ -327,6 +338,12 @@ def run_experiment(config_path: str, overwrite: bool = False, progress: bool = T
                         "policy": policy_name, "topology_seed": topology_seed,
                         "channel_seed": channel_seed, "update_seed": update_seed,
                         "curvature_method": curvature.method,
+                        "curvature_control_message_count": curvature.metadata.get(
+                            "control_message_count", 0
+                        ),
+                        "curvature_control_payload_neighbor_ids": curvature.metadata.get(
+                            "control_payload_neighbor_ids", 0
+                        ),
                     })
                     run_directory = _run_directory(
                         experiment_directory, topology_seed, channel_seed, update_seed,
@@ -337,6 +354,9 @@ def run_experiment(config_path: str, overwrite: bool = False, progress: bool = T
                         bool(output.get("save_per_slot", True)),
                     )
                     run_summaries.append(summary)
+                    close_policy = getattr(policy, "close", None)
+                    if callable(close_policy):
+                        close_policy()
 
                 if node_diagnostic_rows:
                     # 单一 channel/update 组合时文件直接位于 results/<id>/<topology_seed>/。

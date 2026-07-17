@@ -26,6 +26,8 @@ class NodeObservation:
     previous_interference_valid: bool
     congestion_ewma: float
     consecutive_tx_attempts: int
+    broadcast_debt: float
+    broadcast_limit: float
 
 
 class ObservationBuilder:
@@ -74,4 +76,6 @@ class ObservationBuilder:
             previous_interference_valid=bool(knowledge.previous_interference_valid[node_id]),
             congestion_ewma=float(knowledge.congestion_ewma[node_id]),
             consecutive_tx_attempts=int(knowledge.consecutive_tx_attempts[node_id]),
+            broadcast_debt=float(knowledge.broadcast_debt[node_id]),
+            broadcast_limit=float(knowledge.broadcast_limit[node_id]),
         )

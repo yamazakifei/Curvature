@@ -17,6 +17,7 @@ class MetricsCollector:
         warmup_slots: int = 0,
         trace_stride: int = 1,
         node_labels: Optional[np.ndarray] = None,
+        broadcast_limits: Optional[np.ndarray] = None,
     ) -> None:
         if trace_stride < 1:
             raise ValueError("trace_stride must be positive")
@@ -24,6 +25,12 @@ class MetricsCollector:
         self.warmup_slots = int(warmup_slots)
         self.trace_stride = int(trace_stride)
         self.node_labels = None if node_labels is None else np.asarray(node_labels)
+        self.broadcast_limits = (
+            np.ones(n_nodes, dtype=float)
+            if broadcast_limits is None else np.asarray(broadcast_limits, dtype=float)
+        )
+        if self.broadcast_limits.shape != (n_nodes,):
+            raise ValueError("broadcast_limits must have shape [N]")
         self.sums = defaultdict(float)
         self.measured_slots = 0
         self.max_vaoi_samples = []
@@ -59,6 +66,7 @@ class MetricsCollector:
         actions: np.ndarray,
         decode: DecodeResult,
         merge: CacheMergeResult,
+        broadcast_debt: Optional[np.ndarray] = None,
     ) -> None:
         if slot < self.warmup_slots:
             return
@@ -84,6 +92,13 @@ class MetricsCollector:
             "num_improved_cache_entries": int(merge.improved_entries),
             "total_version_improvement": int(merge.total_version_improvement),
         }
+        if broadcast_debt is not None:
+            debt = np.asarray(broadcast_debt, dtype=float)
+            row.update({
+                "mean_broadcast_debt": float(np.mean(debt)),
+                "max_broadcast_debt": float(np.max(debt)),
+                "node_debt_positive_fraction": float(np.mean(debt > 0.0)),
+            })
         row.update(self._cluster_metrics(version_age))
         for key, value in row.items():
             if key != "slot":
@@ -105,6 +120,7 @@ class MetricsCollector:
             raise RuntimeError("no post-warmup slots were measured")
         output = {"mean_{}".format(key): value / count for key, value in self.sums.items()}
         # 提供实验表直接使用的稳定字段名。
+        activity = self.node_tx_counts / count
         output.update({
             "mean_VAoI": self.sums["mean_version_age"] / count,
             "mean_max_VAoI": self.sums["max_version_age"] / count,
@@ -115,8 +131,17 @@ class MetricsCollector:
             "decoded_transmitters_per_tx": self.total_decoded_transmitters / self.total_transmissions if self.total_transmissions else 0.0,
             "innovative_entries_per_tx": self.total_improved_entries / self.total_transmissions if self.total_transmissions else 0.0,
             "version_improvement_per_tx": self.total_version_improvement / self.total_transmissions if self.total_transmissions else 0.0,
-            "per_node_activity_ratio": (self.node_tx_counts / count).tolist(),
+            "per_node_activity_ratio": activity.tolist(),
+            "per_node_broadcast_limit": self.broadcast_limits.tolist(),
+            "std_node_activity_ratio": float(np.std(activity)),
+            "p95_node_activity_ratio": float(np.percentile(activity, 95)),
+            "max_node_activity_ratio": float(np.max(activity)),
+            "node_cap_violation_fraction": float(np.mean(
+                activity > self.broadcast_limits + 1e-12
+            )),
+            "max_node_cap_violation": float(np.max(np.maximum(
+                activity - self.broadcast_limits, 0.0
+            ))),
             "measured_slots": count,
         })
         return output
-
