@@ -9,7 +9,11 @@ from curvature_gossip.curvature import (
     DistributedAF3Curvature, GlobalAF3Curvature, bottleneck_importance,
 )
 from curvature_gossip.learning.ctde_ppo import CTDEPPO
-from curvature_gossip.learning.features import encode_observations
+from curvature_gossip.learning.features import (
+    UPDATE_PROBABILITY_INDEX,
+    encode_observations,
+)
+from curvature_gossip.learning.trainer import _node_constraint_advantages
 from curvature_gossip.simulator import ObservationBuilder
 from curvature_gossip.state import LocalKnowledge, VersionState
 from curvature_gossip.topology.base import Topology
@@ -69,8 +73,8 @@ def test_neural_actor_is_invariant_to_neighbor_order():
         neighbor_cache_estimates=observation.neighbor_cache_estimates[order],
         neighbor_estimate_valid=observation.neighbor_estimate_valid[order],
     )
-    first = encode_observations((observation,), 0.1)
-    second = encode_observations((reordered,), 0.1)
+    first = encode_observations((observation,), 0.1, 0.05)
+    second = encode_observations((reordered,), 0.1, 0.05)
     model = CTDEPPO(seed=123)
     try:
         probability_a = model.predict_probabilities(first)
@@ -78,3 +82,45 @@ def test_neural_actor_is_invariant_to_neighbor_order():
     finally:
         model.close()
     assert np.allclose(probability_a, probability_b, atol=1e-7)
+
+
+def test_node_actor_starts_at_budget_and_has_no_fixed_qmax():
+    topology = _topology()
+    curvature = DistributedAF3Curvature().compute(topology)
+    importance = bottleneck_importance(topology, curvature, "local_degree_bound")
+    observation = ObservationBuilder(topology, curvature, importance).build(
+        0, 1, VersionState(4), LocalKnowledge(topology.graph, broadcast_limit=0.15)
+    )
+    encoded = encode_observations((observation,), 0.1, 0.08)
+    assert encoded.node_features[0, UPDATE_PROBABILITY_INDEX] == np.float32(0.08)
+
+    model = CTDEPPO(seed=123)
+    try:
+        assert np.allclose(model.predict_probabilities(encoded), [0.1], atol=1e-6)
+        with model.graph.as_default():
+            residual_bias = next(
+                variable
+                for variable in model.tf.trainable_variables()
+                if variable.name == "actor/transmission_residual_logit/bias:0"
+            )
+            model.session.run(model.tf.assign(residual_bias, [4.0]))
+        assert model.predict_probabilities(encoded)[0] > 0.2
+    finally:
+        model.close()
+
+
+def test_node_constraint_advantages_are_bounded_and_action_specific():
+    budget, debt = _node_constraint_advantages(
+        actions=np.array([1.0, 0.0]),
+        old_probabilities=np.array([0.1, 0.1]),
+        broadcast_debts=np.array([2.0, 2.0]),
+        lagrange=30.0,
+        local_debt_penalty=0.2,
+        budget_weight=0.15,
+        debt_weight=0.05,
+        signal_scale=1.0,
+    )
+    assert budget[0] < 0.0 < budget[1]
+    assert debt[0] < 0.0 < debt[1]
+    assert np.max(np.abs(budget)) <= 0.15 + 1e-7
+    assert np.max(np.abs(debt)) <= 0.05 + 1e-7

@@ -16,7 +16,7 @@ from ..random_streams import make_rng
 from ..simulator import GossipSimulator, SimulationParameters
 from ..topology import get_topology_generator
 from .ctde_ppo import CTDEPPO
-from .features import encode_observations
+from .features import encode_global_state, encode_observations
 
 
 def _json_safe(value):
@@ -103,6 +103,47 @@ def _gae(rewards, values, gamma: float, gae_lambda: float):
     return advantages, advantages + values
 
 
+def _standardize(values: np.ndarray) -> np.ndarray:
+    """Standardize the VAoI advantage without rescaling constraint multipliers."""
+    values = np.asarray(values, dtype=np.float32)
+    return (values - np.mean(values)) / (np.std(values) + 1e-6)
+
+
+def _node_constraint_advantages(
+    actions: np.ndarray,
+    old_probabilities: np.ndarray,
+    broadcast_debts: np.ndarray,
+    lagrange: float,
+    local_debt_penalty: float,
+    budget_weight: float,
+    debt_weight: float,
+    signal_scale: float,
+):
+    """Compute bounded, per-node budget and debt corrections for the actor."""
+    if signal_scale <= 0.0:
+        raise ValueError("constraint_advantage_scale must be positive")
+    if min(budget_weight, debt_weight, local_debt_penalty, lagrange) < 0.0:
+        raise ValueError("constraint advantage coefficients must be non-negative")
+
+    actions = np.asarray(actions, dtype=np.float32)
+    old_probabilities = np.asarray(old_probabilities, dtype=np.float32)
+    broadcast_debts = np.asarray(broadcast_debts, dtype=np.float32)
+    if not (
+        actions.shape == old_probabilities.shape == broadcast_debts.shape
+    ):
+        raise ValueError("actions, probabilities, and debts must have the same shape")
+
+    # Centering by the old Bernoulli mean provides an action-independent baseline.
+    centered_action = actions - old_probabilities
+    budget = -budget_weight * np.tanh(
+        lagrange * centered_action / signal_scale
+    )
+    debt = -debt_weight * np.tanh(
+        local_debt_penalty * broadcast_debts * centered_action / signal_scale
+    )
+    return budget.astype(np.float32), debt.astype(np.float32)
+
+
 def _write_history(output_directory: Path, history) -> None:
     with (output_directory / "training_history.csv").open(
         "w", newline="", encoding="utf-8"
@@ -133,8 +174,6 @@ def train_ctde(config_path: str):
         learning_rate=float(training.get("learning_rate", 3e-4)),
         clip_ratio=float(training.get("clip_ratio", 0.2)),
         entropy_coefficient=float(training.get("entropy_coefficient", 0.01)),
-        q_min=float(training.get("q_min", 0.001)),
-        q_max=float(training.get("q_max", 0.8)),
         seed=seed,
     )
     action_rng = np.random.default_rng(seed + 7919)
@@ -157,6 +196,22 @@ def train_ctde(config_path: str):
     ]
     lagrange_lr = float(training.get("lagrange_learning_rate", 0.5))
     local_penalty = float(training.get("local_debt_penalty", 0.02))
+    vaoi_reward_scale = float(training.get("vaoi_reward_scale", 1.0))
+    budget_advantage_weight = float(
+        training.get("budget_advantage_weight", 0.15)
+    )
+    debt_advantage_weight = float(
+        training.get("debt_advantage_weight", 0.05)
+    )
+    constraint_advantage_scale = float(
+        training.get("constraint_advantage_scale", 1.0)
+    )
+    if vaoi_reward_scale <= 0.0:
+        raise ValueError("training.vaoi_reward_scale must be positive")
+    if budget_advantage_weight + debt_advantage_weight > 0.5:
+        raise ValueError(
+            "budget_advantage_weight + debt_advantage_weight must not exceed 0.5"
+        )
     history = []
 
     try:
@@ -170,57 +225,81 @@ def train_ctde(config_path: str):
             )
             encoded_steps = []
             actions_steps = []
+            probability_steps = []
             old_log_steps = []
+            debt_steps = []
             value_steps = []
             global_states = []
-            rewards = []
+            vaoi_rewards = []
             costs = []
             vaoi_values = []
 
             last_tx_ratio = 0.0
             for slot in range(simulator.parameters.slots):
                 observations = simulator.begin_step(slot)
-                encoded = encode_observations(observations, target)
-                global_state = simulator.centralized_state(last_tx_ratio)
-                value = float(model.value(global_state)[0])
-                actions, _, old_log_probabilities = model.act(encoded, action_rng)
-                debt_action_cost = float(np.mean([
-                    observation.broadcast_debt * action
-                    for observation, action in zip(observations, actions)
-                ]))
-                outcome = simulator.complete_step(actions.astype(bool))
-                constrained_reward = (
-                    outcome.reward
-                    - lagrange * (outcome.transmission_cost - target)
-                    - local_penalty * debt_action_cost
+                encoded = encode_observations(
+                    observations,
+                    target,
+                    simulator.parameters.update_probability,
                 )
+                global_state = encode_global_state(
+                    simulator.centralized_state(last_tx_ratio),
+                    target,
+                    simulator.parameters.update_probability,
+                    simulator.state.n_nodes,
+                )
+                value = float(model.value(global_state)[0])
+                actions, probabilities, old_log_probabilities = model.act(
+                    encoded, action_rng
+                )
+                debts = np.asarray([
+                    observation.broadcast_debt for observation in observations
+                ], dtype=np.float32)
+                outcome = simulator.complete_step(actions.astype(bool))
                 encoded_steps.append(encoded)
                 actions_steps.append(actions)
+                probability_steps.append(probabilities.astype(np.float32))
                 old_log_steps.append(old_log_probabilities)
+                debt_steps.append(debts)
                 value_steps.append(value)
                 global_states.append(global_state)
-                rewards.append(constrained_reward)
+                # The critic learns only the stationary VAoI objective.
+                vaoi_rewards.append(vaoi_reward_scale * outcome.reward)
                 costs.append(outcome.transmission_cost)
                 vaoi_values.append(outcome.mean_vaoi)
                 last_tx_ratio = outcome.transmission_cost
 
-            advantages, returns = _gae(
-                rewards,
+            vaoi_advantages, returns = _gae(
+                vaoi_rewards,
                 value_steps,
                 float(training.get("gamma", 0.99)),
                 float(training.get("gae_lambda", 0.95)),
             )
-            actor_advantages = np.concatenate([
-                np.full(step.node_features.shape[0], advantages[index], dtype=np.float32)
+            normalized_vaoi_advantages = _standardize(vaoi_advantages)
+            actor_vaoi_advantages = np.concatenate([
+                np.full(
+                    step.node_features.shape[0],
+                    normalized_vaoi_advantages[index],
+                    dtype=np.float32,
+                )
                 for index, step in enumerate(encoded_steps)
             ])
+            budget_advantages, debt_advantages = _node_constraint_advantages(
+                np.concatenate(actions_steps),
+                np.concatenate(probability_steps),
+                np.concatenate(debt_steps),
+                lagrange,
+                local_penalty,
+                budget_advantage_weight,
+                debt_advantage_weight,
+                constraint_advantage_scale,
+            )
+            # VAoI remains the unit-scale main term; bounded constraints only correct it.
             actor_advantages = (
-                actor_advantages - np.mean(actor_advantages)
-            ) / (np.std(actor_advantages) + 1e-6)
+                actor_vaoi_advantages + budget_advantages + debt_advantages
+            ).astype(np.float32)
             actor_batch = {
                 "node_features": np.concatenate([step.node_features for step in encoded_steps]),
-                "edge_features": np.concatenate([step.edge_features for step in encoded_steps]),
-                "edge_mask": np.concatenate([step.edge_mask for step in encoded_steps]),
                 "actions": np.concatenate(actions_steps),
                 "old_log_probabilities": np.concatenate(old_log_steps),
                 "advantages": actor_advantages,
@@ -248,6 +327,18 @@ def train_ctde(config_path: str):
                 "lagrange": lagrange,
                 "actor_loss": losses["actor_loss"],
                 "critic_loss": losses["critic_loss"],
+                "entropy": losses["entropy"],
+                "mean_action_probability": float(np.mean(probability_steps)),
+                "mean_broadcast_debt": float(np.mean(debt_steps)),
+                "mean_abs_vaoi_advantage": float(
+                    np.mean(np.abs(actor_vaoi_advantages))
+                ),
+                "mean_abs_budget_advantage": float(
+                    np.mean(np.abs(budget_advantages))
+                ),
+                "mean_abs_debt_advantage": float(
+                    np.mean(np.abs(debt_advantages))
+                ),
                 "max_node_activity_ratio": summary["max_node_activity_ratio"],
                 "node_cap_violation_fraction": summary["node_cap_violation_fraction"],
                 "curvature_control_messages": curvature.metadata.get(
@@ -275,6 +366,11 @@ def train_ctde(config_path: str):
         "target_tx_ratios": targets,
         "node_counts": node_counts,
         "update_probabilities": update_probabilities,
+        "model_version": "node_only_budget_centered_v2",
+        "budget_advantage_weight": budget_advantage_weight,
+        "debt_advantage_weight": debt_advantage_weight,
+        "constraint_advantage_scale": constraint_advantage_scale,
+        "vaoi_reward_scale": vaoi_reward_scale,
         "per_node_cap_multiplier": float(
             constraints.get("per_node_cap_multiplier", 1.5)
         ),

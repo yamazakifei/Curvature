@@ -1,6 +1,6 @@
 # 快速验证局部 AF3、双层约束和 TensorFlow 训练链路；结果只写入 result_NN。
 experiment:
-  id: nn_ctde_smoke
+  id: nn_ctde_node_v2_smoke
   master_seed: 20260716
   slots: 40
 topology:
@@ -32,11 +32,14 @@ training:
   rollout_slots: 40
   topology_seed_start: 30000
   learning_rate: 0.0003
+  initial_lagrange: 1.0
   lagrange_learning_rate: 0.5
-  local_debt_penalty: 0.02
+  local_debt_penalty: 0.2
+  vaoi_reward_scale: 0.1
+  budget_advantage_weight: 0.15
+  debt_advantage_weight: 0.05
+  constraint_advantage_scale: 1.0
   ppo_epochs: 2
-  q_min: 0.001
-  q_max: 0.4
 output:
   root: result_NN
   save_per_slot: false

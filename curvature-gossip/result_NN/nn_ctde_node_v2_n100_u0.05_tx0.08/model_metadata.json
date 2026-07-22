@@ -1,0 +1,19 @@
+{
+  "budget_advantage_weight": 0.15,
+  "checkpoint": "result_NN\\nn_ctde_node_v2_n100_u0.05_tx0.08\\checkpoints\\model",
+  "constraint_advantage_scale": 1.0,
+  "debt_advantage_weight": 0.05,
+  "episodes": 300,
+  "model_version": "node_only_budget_centered_v2",
+  "node_counts": [
+    100
+  ],
+  "per_node_cap_multiplier": 1.5,
+  "target_tx_ratios": [
+    0.1
+  ],
+  "update_probabilities": [
+    0.05
+  ],
+  "vaoi_reward_scale": 0.1
+}

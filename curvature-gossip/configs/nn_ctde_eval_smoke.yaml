@@ -1,6 +1,6 @@
 # 验证训练 checkpoint 可由标准仿真 runner 以纯本地节点策略加载。
 experiment:
-  id: nn_ctde_eval_smoke
+  id: nn_ctde_node_v2_eval_smoke
   master_seed: 20260717
   slots: 50
   warmup_slots: 5
@@ -35,10 +35,9 @@ policies:
   - name: nn_af3_smoke
     type: neural_ctde
     params:
-      checkpoint_path: result_NN/nn_ctde_smoke/checkpoints/model
+      checkpoint_path: result_NN/nn_ctde_node_v2_smoke/checkpoints/model
       target_tx_ratio: 0.10
-      q_min: 0.001
-      q_max: 0.4
+      update_probability: 0.05
 output:
   root: result_NN/evaluation
   save_per_slot: true

@@ -1,6 +1,7 @@
 # 正式 CTDE 训练默认配置；可在保持 result_NN 隔离的前提下扩展训练分布。
 experiment:
-  id: nn_ctde_node_v2_multicondition
+  # V2 writes to a new directory so the saturated V1 history remains intact.
+  id: nn_ctde_node_v2_n100_u0.05_tx0.1
   master_seed: 20260716
   slots: 500
 topology:
@@ -37,29 +38,34 @@ curvature:
   method: distributed_af3
   normalization: local_degree_bound
 constraints:
-  target_tx_ratio: 0.075
+  target_tx_ratio: 0.10
   per_node_cap_multiplier: 1.5
 training:
-  # 4 个预算 × 3 个规模 × 4 个更新率，各组合至少训练一个 episode。
-  episodes: 48
+  episodes: 300
   rollout_slots: 500
   topology_seed_start: 40000
-  target_tx_ratios: [0.05, 0.075, 0.10, 0.125]
-  node_counts: [80, 100, 120]
-  update_probabilities: [0.05, 0.10, 0.20, 0.40]
+
+  target_tx_ratios: [0.10]
+  node_counts: [100]
+  update_probabilities: [0.05]
+
   learning_rate: 0.0003
   clip_ratio: 0.2
   entropy_coefficient: 0.01
   gamma: 0.99
   gae_lambda: 0.95
+
   initial_lagrange: 1.0
-  lagrange_learning_rate: 0.5
+  lagrange_learning_rate: 1.0
   local_debt_penalty: 0.2
+
+  # VAoI-GAE is the main actor signal; bounded node constraints contribute <= 0.20.
   vaoi_reward_scale: 0.1
   budget_advantage_weight: 0.15
   debt_advantage_weight: 0.05
   constraint_advantage_scale: 1.0
-  ppo_epochs: 4
+
+  ppo_epochs: 8
 output:
   root: result_NN
   save_per_slot: false
