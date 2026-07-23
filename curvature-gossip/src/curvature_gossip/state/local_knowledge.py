@@ -16,6 +16,14 @@ class LocalKnowledge:
             (self.n_nodes, self.n_nodes, self.n_nodes), dtype=np.int64
         )
         self.neighbor_estimate_valid = np.zeros((self.n_nodes, self.n_nodes), dtype=bool)
+        # V3 keeps the last *frozen* packet attempted by each sender.  This is
+        # separate from the post-reception cache so local features cannot leak
+        # same-slot information.
+        self.last_tx_cache_versions = np.zeros((self.n_nodes, self.n_nodes), dtype=np.int64)
+        self.has_transmitted = np.zeros(self.n_nodes, dtype=bool)
+        self.neighbor_last_decode_slot = np.full(
+            (self.n_nodes, self.n_nodes), -1, dtype=np.int64
+        )
         self.last_tx_slot = np.full(self.n_nodes, -1, dtype=np.int64)
         self.previous_transmitted = np.zeros(self.n_nodes, dtype=bool)
         self.previous_interference_power = np.zeros(self.n_nodes, dtype=float)
@@ -30,15 +38,33 @@ class LocalKnowledge:
 
     def update_from_decodes(
         self,
+        slot: int,
         decoded_senders: Mapping[int, int],
         packet_snapshot: np.ndarray,
     ) -> None:
         """接收端仅更新实际成功解码的发送邻居估计。"""
+        packet_snapshot = np.asarray(packet_snapshot, dtype=np.int64)
+        if packet_snapshot.shape != (self.n_nodes, self.n_nodes):
+            raise ValueError("packet_snapshot must have shape [N, N]")
         for receiver, sender in decoded_senders.items():
             if not self._adjacency[receiver, sender]:
                 raise ValueError("decoded sender must be a physical neighbor")
             self.neighbor_cache_estimate[receiver, sender] = packet_snapshot[sender]
             self.neighbor_estimate_valid[receiver, sender] = True
+            self.neighbor_last_decode_slot[receiver, sender] = int(slot)
+
+    def update_transmitted_snapshots(
+        self, transmitted: np.ndarray, packet_snapshot: np.ndarray
+    ) -> None:
+        """Store frozen packets for all attempted transmissions in this slot."""
+        transmitted = np.asarray(transmitted, dtype=bool)
+        packet_snapshot = np.asarray(packet_snapshot, dtype=np.int64)
+        if transmitted.shape != (self.n_nodes,):
+            raise ValueError("transmitted must have shape [N]")
+        if packet_snapshot.shape != (self.n_nodes, self.n_nodes):
+            raise ValueError("packet_snapshot must have shape [N, N]")
+        self.last_tx_cache_versions[transmitted] = packet_snapshot[transmitted]
+        self.has_transmitted[transmitted] = True
 
     def update_slot_history(
         self,

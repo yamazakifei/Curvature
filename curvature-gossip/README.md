@@ -69,3 +69,28 @@ q_i = clip(q_base * exp(-lambda * c_i) * beta^r_i, q_min, q_max)
 ## 扩展
 
 新增拓扑时继承 `TopologyGenerator` 并使用注册装饰器；新增曲率后端时实现 `CurvatureProvider.compute()`；新增策略时实现仅接收 `NodeObservation` 的 `DistributedBroadcastPolicy`。仿真引擎不需要拓扑或曲率类型条件分支。
+
+## CTDE-PPO V3
+
+V3 使用共享的节点级 MLP Actor（14 维本地输入）和仅训练时使用的集中式 Critic（8 维输入）。Actor 不读取全局真实缓存、全局动作计数或 `broadcast_debt`；V2 的 checkpoint 与 V3 不兼容，必须从头训练。
+
+Actor 特征按固定索引为：度归一化、发送年龄、连续发送次数、拥塞、AF3 瓶颈 max/mean、自上次发送后的信息增量、Freshness mean/max/bottleneck、邻居置信度、`log1p(N)`、更新率 `u`、目标发送率 `b`。Critic 输入为四项 `log1p` VAoI 统计、上一时隙发送率、`log1p(N)`、`u`、`b`。
+
+每个时隙中，发送节点先保存由时隙开始时缓存冻结得到的包快照；只有成功解码才更新接收端保存的邻居缓存估计和解码时隙。因此，下一时隙的 Freshness 只依赖本地可见信息。
+
+预算项使用有界线性拉格朗日优势 `-clip(mu, 0, mu_max) * (a-q_old)`。发送率 EMA 和乘子仅在完整 rollout 结束后更新，带相对误差死区、误差截断和显式上限。
+
+V3 配置：
+
+- `configs/nn_ctde_v3_single.yaml`：100 节点单场景正式训练配置（300 episode）。
+- `configs/nn_ctde_v3_smoke.yaml`：2 episode smoke 配置。
+
+运行 V3 验证：
+
+```powershell
+conda run -n GRL_AoI_cpu37 python -m pytest -q
+conda run -n GRL_AoI_cpu37 python scripts/train_nn_ctde.py --config configs/nn_ctde_v3_smoke.yaml
+
+cd D:\ZMF\2026Curvature\curvature-gossip
+conda run -n GRL_AoI_cpu37 python scripts/train_nn_ctde.py --config configs/nn_ctde_v3_single.yaml
+```

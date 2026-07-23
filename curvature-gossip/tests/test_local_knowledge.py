@@ -10,9 +10,10 @@ def test_neighbor_estimate_starts_invalid_and_updates_only_decode():
     knowledge = LocalKnowledge(nx.path_graph(3))
     packets = np.arange(9).reshape(3, 3)
     assert not knowledge.neighbor_estimate_valid.any()
-    knowledge.update_from_decodes({1: 0}, packets)
+    knowledge.update_from_decodes(3, {1: 0}, packets)
     assert knowledge.neighbor_estimate_valid[1, 0]
     assert np.array_equal(knowledge.neighbor_cache_estimate[1, 0], packets[0])
+    assert knowledge.neighbor_last_decode_slot[1, 0] == 3
     assert not knowledge.neighbor_estimate_valid[2, 1]
 
 
@@ -40,3 +41,16 @@ def test_congestion_uses_silent_measurements_and_attempt_history_only():
     )
     assert knowledge.consecutive_tx_attempts.tolist() == [2, 0]
     assert knowledge.congestion_ewma[1] == 0.0
+
+
+def test_transmitted_snapshot_is_frozen_and_decode_time_has_no_same_slot_leakage():
+    knowledge = LocalKnowledge(nx.path_graph(2))
+    packet = np.array([[1, 0], [0, 1]], dtype=np.int64)
+    knowledge.update_transmitted_snapshots(np.array([True, False]), packet)
+    # A later cache merge must not change the snapshot of the attempted packet.
+    packet[0, 1] = 9
+    assert knowledge.has_transmitted.tolist() == [True, False]
+    assert knowledge.last_tx_cache_versions[0].tolist() == [1, 0]
+    assert knowledge.last_tx_cache_versions[1].tolist() == [0, 0]
+    knowledge.update_from_decodes(4, {1: 0}, np.array([[1, 0], [0, 1]]))
+    assert knowledge.neighbor_last_decode_slot[1, 0] == 4

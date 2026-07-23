@@ -1,0 +1,68 @@
+experiment:
+  id: topo1
+  master_seed: 20260713
+  slots: 30
+  warmup_slots: 5
+  trace_stride: 1
+  topology_seeds:
+  - 1
+  channel_seeds:
+  - 0
+  update_seeds:
+  - 0
+topology:
+  type: random_geometric
+  params:
+    n_nodes: 20
+    area_width_m: 100.0
+    area_height_m: 100.0
+    communication_radius_m: 40.0
+    max_attempts: 500
+source:
+  update_probability: 0.05
+channel:
+  tx_power_dbm: 20.0
+  pathloss_reference_db: 30.0
+  reference_distance_m: 1.0
+  pathloss_exponent: 2.5
+  shadowing_std_db: 0.0
+  reciprocal_shadowing: true
+  rayleigh_fading: false
+  noise_psd_dbm_per_hz: -174.0
+  bandwidth_hz: 1000000.0
+  noise_figure_db: 5.0
+  sinr_threshold_db: -3.0
+curvature:
+  method: global_orc
+  alpha: 0.5
+  normalization: global_negative_max
+policies:
+- name: random
+  type: random
+  params:
+    tx_probability: 0.1
+- name: freshness_only
+  type: freshness
+  params:
+    source_aggregation: max
+    q_min: 0.005
+    q_max: 0.2
+    threshold: 2.0
+    temperature: 1.0
+    age_weight: 0.005
+- name: orc_freshness
+  type: curvature_freshness
+  params:
+    source_aggregation: max
+    q_min: 0.005
+    q_max: 0.2
+    threshold: 2.0
+    temperature: 1.0
+    age_weight: 0.005
+    curvature_weight: 1.0
+output:
+  root: D:\ZMF\2026Curvature\curvature-gossip\.pytest-v3-full-20260723\test_smoke_experiment_runs_all0\results
+  save_per_slot: true
+  make_plots: true
+  smoothing_window: 10
+  node_diagnostics_stride: 7

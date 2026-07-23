@@ -71,7 +71,11 @@ class CTDEPPO:
             )
             target_logit = tf.log(target_probability) - tf.log(1.0 - target_probability)
             self.logits = target_logit + residual_logit
-            self.probabilities = tf.nn.sigmoid(self.logits, name="transmission_probability")
+            # This is numerical safety only, not a policy-specific q_max cap.
+            self.probabilities = tf.clip_by_value(
+                tf.nn.sigmoid(self.logits), 1e-6, 1.0 - 1e-6,
+                name="transmission_probability",
+            )
 
         epsilon = 1e-7
         probability = tf.clip_by_value(self.probabilities, epsilon, 1.0 - epsilon)
@@ -83,15 +87,15 @@ class CTDEPPO:
         ratio = tf.exp(log_probability - self.old_log_probabilities)
         clipped_ratio = tf.clip_by_value(ratio, 1.0 - clip_ratio, 1.0 + clip_ratio)
         surrogate = tf.minimum(ratio * self.advantages, clipped_ratio * self.advantages)
+        # This entropy-free loss is used only to diagnose VAoI and budget
+        # policy-gradient magnitudes before a PPO update.
+        self.surrogate_actor_loss = -tf.reduce_mean(surrogate)
         entropy = -(
             probability * tf.log(probability)
             + (1.0 - probability) * tf.log(1.0 - probability)
         )
         self.mean_entropy = tf.reduce_mean(entropy)
-        self.actor_loss = (
-            -tf.reduce_mean(surrogate)
-            - entropy_coefficient * self.mean_entropy
-        )
+        self.actor_loss = self.surrogate_actor_loss - entropy_coefficient * self.mean_entropy
 
         self.global_states = tf.placeholder(
             tf.float32, [None, GLOBAL_STATE_DIM], name="global_states"
@@ -111,6 +115,10 @@ class CTDEPPO:
 
         actor_variables = tf.get_collection(
             tf.GraphKeys.TRAINABLE_VARIABLES, scope="actor"
+        )
+        actor_gradients = tf.gradients(self.surrogate_actor_loss, actor_variables)
+        self.policy_gradient_norm_op = tf.global_norm(
+            [gradient for gradient in actor_gradients if gradient is not None]
         )
         critic_variables = tf.get_collection(
             tf.GraphKeys.TRAINABLE_VARIABLES, scope="critic"
@@ -170,6 +178,16 @@ class CTDEPPO:
             "critic_loss": float(critic_loss),
             "entropy": float(entropy),
         }
+
+    def policy_gradient_norm(self, actor_batch: Mapping) -> float:
+        """Evaluate the pre-update surrogate gradient norm without changing parameters."""
+        feed = {
+            self.node_features: actor_batch["node_features"],
+            self.actions: actor_batch["actions"],
+            self.old_log_probabilities: actor_batch["old_log_probabilities"],
+            self.advantages: actor_batch["advantages"],
+        }
+        return float(self.session.run(self.policy_gradient_norm_op, feed_dict=feed))
 
     def save(self, checkpoint_prefix: str) -> str:
         path = Path(checkpoint_prefix)

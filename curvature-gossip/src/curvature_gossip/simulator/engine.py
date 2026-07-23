@@ -130,7 +130,9 @@ class GossipSimulator:
         merge = self.state.merge_decoded_snapshots(
             decode.decoded_senders, packet_versions, packet_slots
         )
-        self.knowledge.update_from_decodes(decode.decoded_senders, packet_versions)
+        # Persist attempted packets before any merged cache can affect state.
+        self.knowledge.update_transmitted_snapshots(actions, packet_versions)
+        self.knowledge.update_from_decodes(slot, decode.decoded_senders, packet_versions)
         self.knowledge.update_slot_history(
             slot,
             actions,
@@ -168,7 +170,6 @@ class GossipSimulator:
             float(np.percentile(ages, 95)),
             float(np.mean(tail)),
             float(last_tx_ratio),
-            float(np.mean(self.knowledge.broadcast_debt)),
         ], dtype=np.float32)
 
     def step(self, slot: int) -> None:

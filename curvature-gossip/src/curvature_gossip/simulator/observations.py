@@ -20,6 +20,9 @@ class NodeObservation:
     incident_bottleneck_importance: Mapping[int, float]
     neighbor_cache_estimates: np.ndarray
     neighbor_estimate_valid: np.ndarray
+    neighbor_estimate_age: np.ndarray
+    last_tx_cache_versions: np.ndarray
+    has_transmitted: bool
     time_since_last_tx: int
     transmitted_previous_slot: bool
     previous_interference_power: float
@@ -59,6 +62,8 @@ class ObservationBuilder:
         }
         estimates = knowledge.neighbor_cache_estimate[node_id, list(neighbors), :]
         validity = knowledge.neighbor_estimate_valid[node_id, list(neighbors)]
+        decode_slots = knowledge.neighbor_last_decode_slot[node_id, list(neighbors)]
+        estimate_age = np.where(validity, slot - decode_slots, -1)
         last_tx = int(knowledge.last_tx_slot[node_id])
         time_since = slot + 1 if last_tx < 0 else max(0, slot - last_tx)
         # 所有数组均为深拷贝，策略无法通过观测修改仿真器内部状态。
@@ -70,6 +75,11 @@ class ObservationBuilder:
             incident_bottleneck_importance=MappingProxyType(incident_importance),
             neighbor_cache_estimates=self._readonly_copy(estimates),
             neighbor_estimate_valid=self._readonly_copy(validity),
+            neighbor_estimate_age=self._readonly_copy(estimate_age),
+            last_tx_cache_versions=self._readonly_copy(
+                knowledge.last_tx_cache_versions[node_id]
+            ),
+            has_transmitted=bool(knowledge.has_transmitted[node_id]),
             time_since_last_tx=time_since,
             transmitted_previous_slot=bool(knowledge.previous_transmitted[node_id]),
             previous_interference_power=float(knowledge.previous_interference_power[node_id]),
