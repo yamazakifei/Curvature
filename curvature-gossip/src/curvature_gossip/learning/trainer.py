@@ -22,6 +22,7 @@ from ..simulator import GossipSimulator, SimulationParameters
 from ..topology import get_topology_generator
 from .ctde_ppo import CTDEPPO
 from .features import encode_global_state, encode_observations
+from .validation import evaluate_fixed_validation, probability_statistics, validation_scenarios
 
 
 def _json_safe(value):
@@ -141,6 +142,30 @@ def _write_history(output_directory: Path, history) -> None:
         json.dump(_json_safe(history), stream, indent=2, sort_keys=True)
 
 
+def _write_csv_history(path: Path, rows) -> None:
+    """Persist a validation CSV with stable columns after every fixed-set evaluation."""
+    if not rows:
+        return
+    with path.open("w", newline="", encoding="utf-8") as stream:
+        writer = csv.DictWriter(stream, fieldnames=list(rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def _save_checkpoint(model: CTDEPPO, output_directory: Path, name: str, episode: int, config_path: str) -> str:
+    """Save actor, critic, Adam slots, and a manifest identifying the exact training state."""
+    directory = output_directory / "checkpoints" / name
+    checkpoint = model.save(str(directory / "model"))
+    with (directory / "checkpoint_info.json").open("w", encoding="utf-8") as stream:
+        json.dump({
+            "checkpoint": checkpoint,
+            "episode": int(episode),
+            "config": "../../training_config.yaml",
+            "source_config": str(config_path),
+        }, stream, indent=2, sort_keys=True)
+    return checkpoint
+
+
 def train_ctde(config_path: str):
     """Train and save a V3 checkpoint, metadata, and per-rollout diagnostics."""
     config = load_config(config_path)
@@ -162,12 +187,22 @@ def train_ctde(config_path: str):
     tx_ratio_ema_beta = float(training.get("tx_ratio_ema_beta", 0.9))
     relative_tolerance = float(training.get("budget_relative_tolerance", 0.05))
     multiplier_error_clip = float(training.get("multiplier_error_clip", 1.0))
+    use_budget_advantage = bool(training.get("use_budget_advantage", True))
+    update_multiplier = bool(training.get("update_multiplier", True))
+    validation_config = raw.get("validation", {})
+    validation_enabled = bool(validation_config.get("enabled", False))
+    validation_every = int(validation_config.get("every_episodes", 10))
+    checkpoint_every = int(validation_config.get("checkpoint_every_episodes", 20))
     if vaoi_reward_scale <= 0.0 or consecutive_tx_scale <= 0.0 or confidence_time_constant <= 0.0:
         raise ValueError("V3 reward scale, consecutive scale, and confidence time constant must be positive")
     if not 0.0 <= initial_multiplier <= multiplier_max or multiplier_learning_rate < 0.0:
         raise ValueError("invalid initial multiplier or multiplier learning rate")
     if not 0.0 <= tx_ratio_ema_beta <= 1.0 or relative_tolerance < 0.0 or multiplier_error_clip <= 0.0:
         raise ValueError("invalid V3 EMA or multiplier stability setting")
+    if validation_enabled:
+        if validation_every < 1 or checkpoint_every < 1:
+            raise ValueError("validation and checkpoint intervals must be positive")
+        validation_scenarios(raw)
 
     seed = int(raw["experiment"].get("master_seed", 0))
     model = CTDEPPO(learning_rate=float(training.get("learning_rate", 3e-4)), clip_ratio=float(training.get("clip_ratio", 0.2)), entropy_coefficient=float(training.get("entropy_coefficient", 0.01)), seed=seed)
@@ -180,8 +215,38 @@ def train_ctde(config_path: str):
     training_cases = [(target, node_count, update_probability) for node_count in node_counts for update_probability in update_probabilities for target in targets]
     constraint_state = {}
     history = []
+    validation_history = []
+    validation_per_scenario = []
+    best_nn_vaoi = float("inf")
+    best_matched_delta = float("inf")
+
+    def run_validation(checkpoint_episode: int, checkpoint_label: str) -> None:
+        """Evaluate frozen parameters and update the fixed-validation CSV artifacts."""
+        nonlocal best_nn_vaoi, best_matched_delta
+        summary_row, scenario_rows = evaluate_fixed_validation(
+            model, raw, checkpoint_episode, checkpoint_label
+        )
+        validation_history.append(summary_row)
+        validation_per_scenario.extend(scenario_rows)
+        _write_csv_history(output_directory / "validation_history.csv", validation_history)
+        _write_csv_history(
+            output_directory / "validation_per_scenario.csv", validation_per_scenario
+        )
+        if summary_row["nn_mean_VAoI"] < best_nn_vaoi:
+            best_nn_vaoi = summary_row["nn_mean_VAoI"]
+            _save_checkpoint(model, output_directory, "best", checkpoint_episode, config_path)
+        if summary_row["delta_vaoi_matched_mean"] < best_matched_delta:
+            best_matched_delta = summary_row["delta_vaoi_matched_mean"]
+            _save_checkpoint(
+                model, output_directory, "best_matched", checkpoint_episode, config_path
+            )
 
     try:
+        if validation_enabled:
+            # The initial checkpoint makes pre-training evaluation reproducible.
+            _save_checkpoint(model, output_directory, "latest", 0, config_path)
+            _save_checkpoint(model, output_directory, "episode_000000", 0, config_path)
+            run_validation(0, "initial")
         for episode in range(int(training.get("episodes", 20))):
             target, node_count, update_probability = training_cases[episode % len(training_cases)]
             simulator, curvature = _build_simulator(raw, episode, target, node_count, update_probability)
@@ -215,7 +280,10 @@ def train_ctde(config_path: str):
             actor_vaoi_advantages = np.concatenate([np.full(step.node_features.shape[0], normalized_vaoi_advantages[index], dtype=np.float32) for index, step in enumerate(encoded_steps)])
             action_batch = np.concatenate(actions_steps)
             probability_batch = np.concatenate(probability_steps)
-            budget_advantages = _budget_advantages(action_batch, probability_batch, multiplier_used, multiplier_max)
+            budget_advantages = (
+                _budget_advantages(action_batch, probability_batch, multiplier_used, multiplier_max)
+                if use_budget_advantage else np.zeros_like(action_batch, dtype=np.float32)
+            )
             actor_advantages = (actor_vaoi_advantages + budget_advantages).astype(np.float32)
             actor_batch = {"node_features": np.concatenate([step.node_features for step in encoded_steps]), "actions": action_batch, "old_log_probabilities": np.concatenate(old_log_steps), "advantages": actor_advantages}
             critic_batch = {"global_states": np.asarray(global_states, dtype=np.float32), "returns": returns}
@@ -226,8 +294,14 @@ def train_ctde(config_path: str):
             losses = model.update(actor_batch, critic_batch, epochs=int(training.get("ppo_epochs", 4)))
 
             average_cost = float(np.mean(costs))
-            tx_ratio_ema = _update_tx_ratio_ema(constraint_state[case_key]["tx_ratio_ema"], average_cost, tx_ratio_ema_beta)
-            multiplier_next, relative_error, deadzone_error = _update_multiplier(multiplier_used, tx_ratio_ema, target, multiplier_learning_rate, multiplier_max, relative_tolerance, multiplier_error_clip)
+            tx_ratio_ema = _update_tx_ratio_ema(
+                constraint_state[case_key]["tx_ratio_ema"], average_cost, tx_ratio_ema_beta
+            )
+            multiplier_next, relative_error, deadzone_error = _update_multiplier(
+                multiplier_used, tx_ratio_ema, target,
+                multiplier_learning_rate if update_multiplier else 0.0,
+                multiplier_max, relative_tolerance, multiplier_error_clip,
+            )
             constraint_state[case_key] = {"multiplier": multiplier_next, "tx_ratio_ema": tx_ratio_ema}
             summary = simulator.metrics.summary()
             row = {
@@ -245,23 +319,44 @@ def train_ctde(config_path: str):
                 "max_node_activity_ratio": summary["max_node_activity_ratio"], "node_cap_violation_fraction": summary["node_cap_violation_fraction"],
                 "curvature_control_messages": curvature.metadata.get("control_message_count", 0),
             }
+            row.update(probability_statistics(probability_steps))
             if not all(np.isfinite(value) for value in row.values() if isinstance(value, (float, np.floating))):
                 raise FloatingPointError("V3 training diagnostics must be finite")
             history.append(row)
             _write_history(output_directory, history)
-            model.save(str(output_directory / "checkpoints" / "model"))
+            completed_episodes = episode + 1
+            if validation_enabled and completed_episodes % validation_every == 0:
+                _save_checkpoint(model, output_directory, "latest", completed_episodes, config_path)
+                run_validation(completed_episodes, "episode_{:06d}".format(completed_episodes))
+            if completed_episodes % checkpoint_every == 0:
+                _save_checkpoint(
+                    model, output_directory, "episode_{:06d}".format(completed_episodes),
+                    completed_episodes, config_path,
+                )
             print("episode={episode} VAoI={vaoi:.4f} tx_ratio={tx:.4f} multiplier={multiplier:.4f}".format(episode=episode, vaoi=row["mean_VAoI"], tx=average_cost, multiplier=multiplier_next))
     finally:
+        if history:
+            completed_episodes = len(history)
+            if not validation_enabled or completed_episodes % validation_every != 0:
+                _save_checkpoint(model, output_directory, "latest", completed_episodes, config_path)
+            if completed_episodes % checkpoint_every != 0:
+                _save_checkpoint(
+                    model, output_directory, "episode_{:06d}".format(completed_episodes),
+                    completed_episodes, config_path,
+                )
         model.close()
 
     metadata = {
-        "checkpoint": str(output_directory / "checkpoints" / "model"), "episodes": len(history),
+        "checkpoint": str(output_directory / "checkpoints" / "latest" / "model"), "episodes": len(history),
         "target_tx_ratios": targets, "node_counts": node_counts, "update_probabilities": update_probabilities,
         "model_version": "node_only_freshness_lagrangian_v3", "vaoi_reward_scale": vaoi_reward_scale,
         "consecutive_tx_scale": consecutive_tx_scale, "neighbor_confidence_time_constant": confidence_time_constant,
         "initial_multiplier": initial_multiplier, "multiplier_learning_rate": multiplier_learning_rate,
         "multiplier_max": multiplier_max, "tx_ratio_ema_beta": tx_ratio_ema_beta,
         "budget_relative_tolerance": relative_tolerance, "multiplier_error_clip": multiplier_error_clip,
+        "use_budget_advantage": use_budget_advantage, "update_multiplier": update_multiplier,
+        "validation_enabled": validation_enabled, "validation_every_episodes": validation_every,
+        "checkpoint_every_episodes": checkpoint_every,
         "per_node_cap_multiplier": float(constraints.get("per_node_cap_multiplier", 1.5)),
     }
     with (output_directory / "model_metadata.json").open("w", encoding="utf-8") as stream:

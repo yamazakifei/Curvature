@@ -31,7 +31,9 @@ class CTDEPPO:
                 float(clip_ratio),
                 float(entropy_coefficient),
             )
-            self.saver = self.tf.train.Saver(max_to_keep=5)
+            # Checkpoints are intentionally routed to latest/best/archive directories;
+            # automatic global cleanup would delete valid archived checkpoints.
+            self.saver = self.tf.train.Saver(max_to_keep=None)
             self.init_op = self.tf.global_variables_initializer()
         self.session = self.tf.Session(graph=self.graph, config=session_config)
         self.session.run(self.init_op)
@@ -188,6 +190,12 @@ class CTDEPPO:
             self.advantages: actor_batch["advantages"],
         }
         return float(self.session.run(self.policy_gradient_norm_op, feed_dict=feed))
+
+    def variable_snapshot(self):
+        """Return an immutable copy of all model and optimizer variables for validation checks."""
+        with self.graph.as_default():
+            variables = self.tf.global_variables()
+        return tuple(self.session.run(variables))
 
     def save(self, checkpoint_prefix: str) -> str:
         path = Path(checkpoint_prefix)

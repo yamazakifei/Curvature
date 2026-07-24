@@ -1,0 +1,64 @@
+# Two-episode fixed-validation smoke test; uses the same N, u, b and frozen training settings.
+experiment:
+  id: nn_v3_fixed_validation_smoke_v2
+  master_seed: 20260723
+  slots: 30
+topology:
+  type: random_geometric
+  params:
+    n_nodes: 100
+    area_width_m: 400.0
+    area_height_m: 300.0
+    communication_radius_m: 85.0
+    min_degree: 2
+    max_attempts: 2000
+source:
+  update_probability: 0.05
+channel:
+  tx_power_dbm: 20.0
+  pathloss_reference_db: 30.0
+  pathloss_exponent: 2.7
+  shadowing_std_db: 4.0
+  rayleigh_fading: true
+  sinr_threshold_db: 3.0
+curvature:
+  method: distributed_af3
+  normalization: local_degree_bound
+constraints:
+  target_tx_ratio: 0.10
+  per_node_cap_multiplier: 1.5
+training:
+  episodes: 2
+  rollout_slots: 30
+  topology_seed_start: 42000
+  target_tx_ratios: [0.10]
+  node_counts: [100]
+  update_probabilities: [0.05]
+  learning_rate: 0.0003
+  clip_ratio: 0.2
+  entropy_coefficient: 0.0
+  gamma: 0.99
+  gae_lambda: 0.95
+  ppo_epochs: 2
+  vaoi_reward_scale: 0.1
+  consecutive_tx_scale: 3.0
+  neighbor_confidence_time_constant: 20.0
+  initial_multiplier: 0.0
+  multiplier_learning_rate: 0.01
+  multiplier_max: 0.15
+  tx_ratio_ema_beta: 0.5
+  budget_relative_tolerance: 0.05
+  multiplier_error_clip: 1.0
+  use_budget_advantage: false
+  update_multiplier: false
+validation:
+  enabled: true
+  every_episodes: 1
+  checkpoint_every_episodes: 1
+  scenarios:
+    - {id: smoke_v0, topology_seed: 52000, source_update_seed: 62000, channel_shadowing_seed: 72000, channel_fading_seed: 82000, policy_action_seed: 92000, slots: 30, n_nodes: 100, update_probability: 0.05, target_tx_ratio: 0.10}
+    - {id: smoke_v1, topology_seed: 52001, source_update_seed: 62001, channel_shadowing_seed: 72001, channel_fading_seed: 82001, policy_action_seed: 92001, slots: 30, n_nodes: 100, update_probability: 0.05, target_tx_ratio: 0.10}
+output:
+  root: result_NN
+  save_per_slot: false
+  make_plots: false

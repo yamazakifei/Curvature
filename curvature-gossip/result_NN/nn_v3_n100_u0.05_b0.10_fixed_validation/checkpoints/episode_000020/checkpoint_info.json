@@ -1,0 +1,6 @@
+{
+  "checkpoint": "result_NN\\nn_v3_n100_u0.05_b0.10_fixed_validation\\checkpoints\\episode_000020\\model",
+  "config": "../../training_config.yaml",
+  "episode": 20,
+  "source_config": "configs/nn_ctde_v3_fixed_validation.yaml"
+}

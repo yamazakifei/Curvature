@@ -85,6 +85,22 @@ V3 配置：
 - `configs/nn_ctde_v3_single.yaml`：100 节点单场景正式训练配置（300 episode）。
 - `configs/nn_ctde_v3_smoke.yaml`：2 episode smoke 配置。
 
+### 固定验证：节点级广播选择
+
+`configs/nn_ctde_v3_fixed_validation.yaml` 在不改变 Actor/Critic、特征、PPO、奖励或预算定义的前提下，增加固定的 10 个验证场景。每个场景配置独立的拓扑、源更新、阴影衰落、快衰落和策略动作种子；这些随机流均位于 `fixed_validation` 命名空间，不会消耗训练随机流。
+
+每次验证在相同外生随机流下比较三种策略：冻结 Actor 的 Bernoulli 采样、固定 `q=b` 随机策略、以及使用该场景 Actor 平均概率 `q_bar` 的 matched-rate 随机策略。输出 `validation_history.csv` 和 `validation_per_scenario.csv`，其中配对差值为 `delta_vaoi_matched = VAoI_nn - VAoI_matched`；负值表示 Actor 优于匹配发送率的随机策略。
+
+训练和验证都会记录 Actor 概率的分位数及三类离散度：时隙内节点标准差均值、全部节点时隙总体标准差、节点跨时隙均值的节点间标准差。验证同时检查模型和 Adam 变量在推理前后完全一致。
+
+每 20 个 episode 归档一个 checkpoint；`latest`、验证 VAoI 最低的 `best` 与 matched-rate 差值最低的 `best_matched` 分目录保存。checkpoint 包含 Actor、Critic、Adam 状态，以及记录当前 episode 和配置位置的 `checkpoint_info.json`。
+
+固定验证正式训练命令：
+
+```powershell
+conda run -n GRL_AoI_cpu37 python scripts/train_nn_ctde.py --config configs/nn_ctde_v3_fixed_validation.yaml
+```
+
 运行 V3 验证：
 
 ```powershell
