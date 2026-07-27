@@ -110,3 +110,25 @@ conda run -n GRL_AoI_cpu37 python scripts/train_nn_ctde.py --config configs/nn_c
 cd D:\ZMF\2026Curvature\curvature-gossip
 conda run -n GRL_AoI_cpu37 python scripts/train_nn_ctde.py --config configs/nn_ctde_v3_single.yaml
 ```
+
+## NN_2layers staged work: Stage 0
+
+Stage 0 adds evaluation-only baselines for the staged two-layer Actor work;
+it does not train or load a new Actor.  The unified configuration runs:
+
+- `uniform_random`: fixed `q=b` random baseline;
+- `curvature_fixed_alpha`: local AF3 incident-bottleneck maximum with a fixed alpha and no residual layer;
+- `alpha_override_zero`: strict `alpha_override=0.0` degeneration to `q=b`;
+- `matched_rate_random`: a random policy whose probability is set to the reference policy's realized attempt rate for the same topology/channel/update seed tuple.
+
+Run the short smoke evaluation with:
+
+```powershell
+conda run -n GRL_AoI_cpu37 python -m curvature_gossip.cli run --config configs/nn_2layers_stage0_smoke.yaml
+```
+
+Each per-run `summary.json` and aggregate comparison reports `target_tx_ratio`,
+`mean_policy_probability`, `actual_tx_ratio`, `mean_VAoI`, topology count, and
+the topology/channel/update seeds.  A `matched_rate_random` entry must follow
+its `reference_policy` in YAML because its probability is calibrated from that
+completed reference run.

@@ -25,6 +25,7 @@ class DistributedBroadcastPolicy(ABC):
 def create_policy(policy_type: str, params: Mapping[str, Any]) -> DistributedBroadcastPolicy:
     # 延迟导入避免策略模块之间形成循环依赖。
     from .curvature_freshness_policy import CurvatureFreshnessPolicy
+    from .curvature_fixed_alpha_policy import CurvatureFixedAlphaPolicy
     from .freshness_policy import FreshnessPolicy
     from .neural_policy import NeuralCTDEPolicy
     from .random_policy import UniformRandomPolicy
@@ -33,6 +34,7 @@ def create_policy(policy_type: str, params: Mapping[str, Any]) -> DistributedBro
         "random": UniformRandomPolicy,
         "freshness": FreshnessPolicy,
         "curvature_freshness": CurvatureFreshnessPolicy,
+        "curvature_fixed_alpha": CurvatureFixedAlphaPolicy,
         "neural_ctde": NeuralCTDEPolicy,
     }
     try:

@@ -98,6 +98,9 @@ class GossipSimulator:
             broadcast_limits=self.knowledge.broadcast_limit,
         )
         self.node_diagnostics = []
+        # Keep probability statistics separate from sampled actions for rate diagnostics.
+        self._probability_sum = 0.0
+        self._probability_count = 0
         self._pending = None
 
     def begin_step(self, slot: int) -> Tuple:
@@ -205,6 +208,10 @@ class GossipSimulator:
                     "final_probability": diagnostics.get("final_probability"),
                 })
                 probabilities[node] = np.clip(probability, 0.0, 1.0)
+        # Use the same post-warmup window as the sampled-rate and VAoI metrics.
+        if slot >= self.parameters.warmup_slots:
+            self._probability_sum += float(np.sum(probabilities))
+            self._probability_count += int(probabilities.size)
         actions = self.policy_rng.random(self.state.n_nodes) < probabilities
         self.complete_step(actions)
 
@@ -213,6 +220,16 @@ class GossipSimulator:
             self.step(slot)
         summary = self.metrics.summary()
         summary.update(self.tracker.summary())
+        # These fields make target-rate, intended-rate, and sampled-rate comparisons explicit.
+        summary.update({
+            "target_tx_ratio": float(self.parameters.target_tx_ratio),
+            "mean_policy_probability": float(
+                self._probability_sum / self._probability_count
+            ) if self._probability_count else 0.0,
+            "actual_tx_ratio": float(
+                summary["avg_tx_per_slot"] / self.state.n_nodes
+            ),
+        })
         return SimulationResult(
             summary=summary,
             per_slot=tuple(self.metrics.per_slot),

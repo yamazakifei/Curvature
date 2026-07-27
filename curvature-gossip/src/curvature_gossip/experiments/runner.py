@@ -76,6 +76,13 @@ def _policy_configs(raw: Mapping[str, Any]) -> List[Mapping[str, Any]]:
         if policy["name"] in names:
             raise ValueError("policy names must be unique")
         names.append(policy["name"])
+    for policy in policies:
+        if policy.get("type", policy["name"]) == "matched_rate_random":
+            reference = policy.get("params", {}).get("reference_policy")
+            if not isinstance(reference, str) or reference not in names:
+                raise ValueError("matched_rate_random requires params.reference_policy naming a configured policy")
+            if reference == policy["name"]:
+                raise ValueError("matched_rate_random cannot reference itself")
     return policies
 
 
@@ -214,11 +221,20 @@ def _aggregate(run_summaries: Sequence[Mapping[str, Any]]):
         "max_node_activity_ratio", "node_cap_violation_fraction",
         "max_node_cap_violation", "curvature_control_message_count",
         "curvature_control_payload_neighbor_ids",
+        "target_tx_ratio", "mean_policy_probability", "actual_tx_ratio",
+        "matched_rate_probability",
     ]
     rows = []
     for policy_name in sorted({summary["policy"] for summary in run_summaries}):
         policy_runs = [summary for summary in run_summaries if summary["policy"] == policy_name]
-        row = {"policy": policy_name, "independent_runs": len(policy_runs)}
+        row = {
+            "policy": policy_name,
+            "independent_runs": len(policy_runs),
+            "topology_count": len({summary["topology_seed"] for summary in policy_runs}),
+            "topology_seeds": sorted({int(summary["topology_seed"]) for summary in policy_runs}),
+            "channel_seeds": sorted({int(summary["channel_seed"]) for summary in policy_runs}),
+            "update_seeds": sorted({int(summary["update_seed"]) for summary in policy_runs}),
+        }
         for metric in key_metrics:
             values = np.asarray([
                 summary[metric] for summary in policy_runs if summary.get(metric) is not None
@@ -303,10 +319,28 @@ def run_experiment(config_path: str, overwrite: bool = False, progress: bool = T
             )
             for update_seed in update_seeds:
                 node_diagnostic_rows = []
+                completed_policy_summaries = {}
                 # 依次创建策略，随后运行模拟器、保存单次结果，并将汇总添加到列表中。
                 for policy_config in policies:
                     policy_name = policy_config["name"]
-                    policy = create_policy(policy_config.get("type", policy_name), policy_config.get("params", {}))
+                    policy_type = policy_config.get("type", policy_name)
+                    policy_params = dict(policy_config.get("params", {}))
+                    matched_reference = None
+                    matched_probability = None
+                    if policy_type == "matched_rate_random":
+                        matched_reference = policy_params.pop("reference_policy", None)
+                        if matched_reference not in completed_policy_summaries:
+                            raise ValueError(
+                                "matched_rate_random policy '{}' must follow its reference policy '{}'"
+                                .format(policy_name, matched_reference)
+                            )
+                        # Match the reference policy's realized attempt rate, not its target b.
+                        matched_probability = float(
+                            completed_policy_summaries[matched_reference]["actual_tx_ratio"]
+                        )
+                        policy_type = "random"
+                        policy_params = {"tx_probability": matched_probability}
+                    policy = create_policy(policy_type, policy_params)
                     simulator = GossipSimulator(
                         topology, curvature, importance, propagation, policy, simulation_parameters,
                         make_rng(master_seed, "updates", topology_seed, update_seed),
@@ -337,6 +371,9 @@ def run_experiment(config_path: str, overwrite: bool = False, progress: bool = T
                     summary.update({
                         "policy": policy_name, "topology_seed": topology_seed,
                         "channel_seed": channel_seed, "update_seed": update_seed,
+                        "policy_type": policy_config.get("type", policy_name),
+                        "matched_rate_reference_policy": matched_reference,
+                        "matched_rate_probability": matched_probability,
                         "curvature_method": curvature.method,
                         "curvature_control_message_count": curvature.metadata.get(
                             "control_message_count", 0
@@ -354,6 +391,7 @@ def run_experiment(config_path: str, overwrite: bool = False, progress: bool = T
                         bool(output.get("save_per_slot", True)),
                     )
                     run_summaries.append(summary)
+                    completed_policy_summaries[policy_name] = summary
                     close_policy = getattr(policy, "close", None)
                     if callable(close_policy):
                         close_policy()
