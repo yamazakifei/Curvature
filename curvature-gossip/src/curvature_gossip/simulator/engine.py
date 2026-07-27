@@ -23,6 +23,8 @@ class SimulationParameters:
     node_diagnostics_stride: int = 0
     target_tx_ratio: float = 1.0
     per_node_cap_multiplier: float = 1.0
+    congestion_ewma_beta: float = 0.8
+    congestion_feature_scale: float = 5.0
 
     def __post_init__(self):
         if self.slots < 1 or not 0 <= self.warmup_slots < self.slots:
@@ -35,6 +37,10 @@ class SimulationParameters:
             raise ValueError("target_tx_ratio must be in (0, 1]")
         if self.per_node_cap_multiplier <= 0.0:
             raise ValueError("per_node_cap_multiplier must be positive")
+        if not 0.0 <= self.congestion_ewma_beta <= 1.0:
+            raise ValueError("congestion_ewma_beta must be in [0, 1]")
+        if self.congestion_feature_scale <= 0.0:
+            raise ValueError("congestion_feature_scale must be positive")
 
 
 @dataclass
@@ -141,7 +147,7 @@ class GossipSimulator:
             actions,
             decode.interference_plus_noise,
             self.decoder.noise_power_mw,
-            getattr(self.policy, "congestion_ewma_alpha", 0.8),
+            self.parameters.congestion_ewma_beta,
         )
         self.tracker.update_completions(slot, self.state.cache_versions)
         self.metrics.record(

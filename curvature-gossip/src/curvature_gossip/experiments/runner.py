@@ -269,6 +269,7 @@ def run_experiment(config_path: str, overwrite: bool = False, progress: bool = T
     output = raw.get("output", {})
     node_diagnostics_stride = int(output.get("node_diagnostics_stride", 0))
     constraints = raw.get("constraints", {})
+    observation = raw.get("observation", {})
     target_tx_ratio = float(constraints.get("target_tx_ratio", 1.0))
     per_node_cap_multiplier = float(constraints.get("per_node_cap_multiplier", 1.0))
     output_root = Path(output.get("root", "results"))
@@ -299,6 +300,8 @@ def run_experiment(config_path: str, overwrite: bool = False, progress: bool = T
         node_diagnostics_stride,
         target_tx_ratio,
         per_node_cap_multiplier,
+        float(observation.get("congestion_ewma_beta", 0.8)),
+        float(observation.get("congestion_feature_scale", 5.0)),
     )
     generator = get_topology_generator(config.topology.type)
 

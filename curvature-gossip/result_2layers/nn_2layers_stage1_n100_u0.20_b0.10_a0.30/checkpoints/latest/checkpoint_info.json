@@ -1,0 +1,23 @@
+{
+  "actor": {
+    "architecture_version": "curvature_stage1_v1",
+    "curvature": {
+      "alpha_init": 0.3,
+      "alpha_override": null,
+      "alpha_parameterization": "softplus",
+      "center": 0.4015509259807487,
+      "score": "incident_bottleneck_max"
+    },
+    "input_feature_names": [
+      "incident_bottleneck_max"
+    ],
+    "residual": {
+      "enabled": false
+    },
+    "stage": 1
+  },
+  "checkpoint": "result_2layers\\nn_2layers_stage1_n100_u0.20_b0.10_a0.30\\checkpoints\\latest\\model",
+  "config": "../../training_config.yaml",
+  "episode": 90,
+  "source_config": "configs\\nn_2layers_stage1_single.yaml"
+}

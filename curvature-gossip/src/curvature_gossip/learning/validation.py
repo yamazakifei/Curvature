@@ -17,7 +17,7 @@ from ..policies.random_policy import UniformRandomPolicy
 from ..random_streams import make_rng
 from ..simulator import GossipSimulator, SimulationParameters
 from ..topology import get_topology_generator
-from .features import encode_observations
+from .features import encode_observations, encode_stage1_observations
 
 
 @dataclass(frozen=True)
@@ -124,11 +124,14 @@ def _build_simulator(raw: Mapping, scenario: ValidationScenario, policy_name: st
         make_rng(master_seed, "fixed_validation", "shadowing", scenario.channel_shadowing_seed),
     )
     constraints = raw.get("constraints", {})
+    observation = raw.get("observation", {})
     parameters = SimulationParameters(
         slots=scenario.slots,
         update_probability=scenario.update_probability,
         target_tx_ratio=scenario.target_tx_ratio,
         per_node_cap_multiplier=float(constraints.get("per_node_cap_multiplier", 1.5)),
+        congestion_ewma_beta=float(observation.get("congestion_ewma_beta", 0.8)),
+        congestion_feature_scale=float(observation.get("congestion_feature_scale", 5.0)),
     )
     return GossipSimulator(
         topology, curvature, importance, propagation, UniformRandomPolicy(probability), parameters,
@@ -146,13 +149,13 @@ def _run_neural_scenario(model, raw: Mapping, scenario: ValidationScenario) -> T
     probability_steps = []
     for slot in range(scenario.slots):
         observations = simulator.begin_step(slot)
-        encoded = encode_observations(
-            observations,
-            scenario.target_tx_ratio,
-            scenario.update_probability,
-            float(training.get("consecutive_tx_scale", 3.0)),
-            float(training.get("neighbor_confidence_time_constant", 20.0)),
-        )
+        encoded = (encode_stage1_observations(observations, scenario.target_tx_ratio)
+                   if model.actor_stage == 1 else encode_observations(
+                       observations, scenario.target_tx_ratio, scenario.update_probability,
+                       float(training.get("consecutive_tx_scale", 3.0)),
+                       float(training.get("neighbor_confidence_time_constant", 20.0)),
+                       float(raw.get("observation", {}).get("congestion_feature_scale", 5.0)),
+                   ))
         probabilities = np.asarray(model.predict_probabilities(encoded), dtype=np.float32)
         if probabilities.shape != (scenario.n_nodes,) or not np.isfinite(probabilities).all():
             raise ValueError("Actor evaluation must return finite [N] probabilities")

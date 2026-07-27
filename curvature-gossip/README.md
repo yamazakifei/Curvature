@@ -132,3 +132,28 @@ Each per-run `summary.json` and aggregate comparison reports `target_tx_ratio`,
 the topology/channel/update seeds.  A `matched_rate_random` entry must follow
 its `reference_policy` in YAML because its probability is calibrated from that
 completed reference run.
+
+## NN_2layers staged work: Stage 1
+
+Stage 1 trains the shared curvature-only Actor
+`sigmoid(logit(b) + softplus(alpha_raw) * (s_kappa - c_kappa))`.  Its only
+trainable Actor parameter is `alpha_raw`; no residual MLP is instantiated.
+The offline `c_kappa` value is calculated from `training.center_topology_seeds`
+when `actor.curvature.center: auto`, then written into the saved training YAML,
+model metadata, and checkpoint manifest.
+
+```powershell
+conda run --no-capture-output -n GRL_AoI_cpu37 python scripts/train_nn_ctde.py --config configs/nn_2layers_stage1_smoke.yaml
+```
+
+Inspect `training_history.csv` for `alpha_raw`, `alpha_kappa`, the `q_base_*`
+statistics, `corr_s_kappa_q_base`, PPO diagnostics, VAoI, and actual sending
+rate.  The checkpoint under `checkpoints/latest/` is a Stage-1-only actor and
+is not compatible with legacy V3 Actor checkpoints.
+
+The paired evaluation smoke configuration uses the frozen center written by
+the supplied training smoke run:
+
+```powershell
+conda run --no-capture-output -n GRL_AoI_cpu37 python -m curvature_gossip.cli run --config configs/nn_2layers_stage1_eval_smoke.yaml
+```

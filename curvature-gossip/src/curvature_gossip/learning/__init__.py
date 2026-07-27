@@ -6,6 +6,8 @@ from .features import (
     EncodedObservations,
     encode_global_state,
     encode_observations,
+    encode_curvature_score,
+    encode_stage1_observations,
 )
 
 __all__ = [
@@ -13,5 +15,5 @@ __all__ = [
     "NODE_FEATURE_DIM",
     "EncodedObservations",
     "encode_global_state",
-    "encode_observations",
+    "encode_observations", "encode_curvature_score", "encode_stage1_observations",
 ]

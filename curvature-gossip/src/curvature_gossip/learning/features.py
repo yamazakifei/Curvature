@@ -27,6 +27,17 @@ class EncodedObservations:
     node_features: np.ndarray
 
 
+@dataclass(frozen=True)
+class Stage1EncodedObservations:
+    """Local Stage-1 inputs: one curvature score and the scenario anchor b."""
+
+    curvature_scores: np.ndarray
+    target_tx_ratios: np.ndarray
+
+
+STAGE1_FEATURE_NAMES = ("incident_bottleneck_max",)
+
+
 def _validate_probability(name: str, value: float, strict_lower: bool = False) -> float:
     value = float(value)
     if not np.isfinite(value) or value < 0.0 or value > 1.0 or (strict_lower and value == 0.0):
@@ -68,12 +79,46 @@ def _local_freshness_features(
     return weighted_gain, max_gain, bottle_gain, confidence_mean
 
 
+def encode_curvature_score(observations: Sequence[NodeObservation]) -> np.ndarray:
+    """Encode the Stage-1 local AF3 score ``max_j b_ij`` as shape ``[N, 1]``.
+
+    This encoder intentionally accesses only incident bottleneck values.  It
+    neither reads dynamic state nor computes a graph-wide normalization.
+    """
+    observations = tuple(observations)
+    if not observations:
+        raise ValueError("at least one node observation is required")
+    scores = np.zeros((len(observations), 1), dtype=np.float32)
+    for row, observation in enumerate(observations):
+        bottlenecks = np.asarray([
+            observation.incident_bottleneck_importance[neighbor]
+            for neighbor in observation.neighbor_ids
+        ], dtype=float)
+        if np.any(~np.isfinite(bottlenecks)) or np.any((bottlenecks < 0.0) | (bottlenecks > 1.0)):
+            raise ValueError("bottleneck importance must be finite and in [0, 1]")
+        scores[row, 0] = float(np.max(bottlenecks)) if bottlenecks.size else 0.0
+    return scores
+
+
+def encode_stage1_observations(
+    observations: Sequence[NodeObservation], target_tx_ratio: float
+) -> Stage1EncodedObservations:
+    """Combine the Stage-1 curvature score with a per-node target-rate anchor."""
+    observations = tuple(observations)
+    target_tx_ratio = _validate_probability("target_tx_ratio", target_tx_ratio, True)
+    return Stage1EncodedObservations(
+        curvature_scores=encode_curvature_score(observations),
+        target_tx_ratios=np.full(len(observations), target_tx_ratio, dtype=np.float32),
+    )
+
+
 def encode_observations(
     observations: Sequence[NodeObservation],
     target_tx_ratio: float,
     update_probability: float,
     consecutive_tx_scale: float = 3.0,
     neighbor_confidence_time_constant: float = 20.0,
+    congestion_feature_scale: float = 5.0,
 ) -> EncodedObservations:
     """Build the 14 V3 node features in their fixed checkpoint-compatible order."""
     observations = tuple(observations)
@@ -85,6 +130,8 @@ def encode_observations(
         raise ValueError("consecutive_tx_scale must be positive")
     if not np.isfinite(neighbor_confidence_time_constant) or neighbor_confidence_time_constant <= 0.0:
         raise ValueError("neighbor_confidence_time_constant must be positive")
+    if not np.isfinite(congestion_feature_scale) or congestion_feature_scale <= 0.0:
+        raise ValueError("congestion_feature_scale must be positive")
 
     n_nodes = int(np.asarray(observations[0].own_cache_versions).size)
     if n_nodes <= 0:
@@ -110,7 +157,7 @@ def encode_observations(
             np.log1p(degree) / np.log1p(n_nodes),
             np.tanh(target_tx_ratio * max(0, int(observation.time_since_last_tx))),
             np.tanh(max(0, int(observation.consecutive_tx_attempts)) / consecutive_tx_scale),
-            np.tanh(max(0.0, float(observation.congestion_ewma)) / 5.0),
+            np.tanh(max(0.0, float(observation.congestion_ewma)) / congestion_feature_scale),
             float(np.max(bottlenecks)) if degree else 0.0,
             float(np.mean(bottlenecks)) if degree else 0.0,
             self_increment,

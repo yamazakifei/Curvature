@@ -1,0 +1,56 @@
+[
+  {
+    "actual_tx_ratio": 0.10178571428571428,
+    "actual_tx_ratio_ci95": 0.0,
+    "avg_tx_per_slot": 1.6285714285714286,
+    "avg_tx_per_slot_ci95": 0.0,
+    "channel_seeds": [
+      0
+    ],
+    "completed_update_fraction": 0.21621621621621623,
+    "completed_update_fraction_ci95": 0.0,
+    "curvature_control_message_count": 116.0,
+    "curvature_control_message_count_ci95": 0.0,
+    "curvature_control_payload_neighbor_ids": 936.0,
+    "curvature_control_payload_neighbor_ids_ci95": 0.0,
+    "independent_runs": 1,
+    "innovative_entries_per_tx": 3.754385964912281,
+    "innovative_entries_per_tx_ci95": 0.0,
+    "matched_rate_probability": null,
+    "matched_rate_probability_ci95": null,
+    "max_node_activity_ratio": 0.22857142857142856,
+    "max_node_activity_ratio_ci95": 0.0,
+    "max_node_cap_violation": 0.07857142857142854,
+    "max_node_cap_violation_ci95": 0.0,
+    "mean_VAoI": 0.7189285714285715,
+    "mean_VAoI_ci95": 0.0,
+    "mean_dissemination_delay": 17.25,
+    "mean_dissemination_delay_ci95": 0.0,
+    "mean_max_VAoI": 2.8,
+    "mean_max_VAoI_ci95": 0.0,
+    "mean_policy_probability": 0.09977960400283337,
+    "mean_policy_probability_ci95": 0.0,
+    "mean_tail_VAoI": 2.7761904761904765,
+    "mean_tail_VAoI_ci95": 0.0,
+    "node_cap_violation_fraction": 0.1875,
+    "node_cap_violation_fraction_ci95": 0.0,
+    "p95_max_VAoI": 5.0,
+    "p95_max_VAoI_ci95": 0.0,
+    "p95_node_activity_ratio": 0.1857142857142857,
+    "p95_node_activity_ratio_ci95": 0.0,
+    "policy": "stage1_smoke",
+    "std_node_activity_ratio": 0.052458681505601366,
+    "std_node_activity_ratio_ci95": 0.0,
+    "successful_decodes_per_tx": 3.0701754385964914,
+    "successful_decodes_per_tx_ci95": 0.0,
+    "target_tx_ratio": 0.1,
+    "target_tx_ratio_ci95": 0.0,
+    "topology_count": 1,
+    "topology_seeds": [
+      1
+    ],
+    "update_seeds": [
+      0
+    ]
+  }
+]

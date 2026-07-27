@@ -1,0 +1,46 @@
+{
+  "actor": {
+    "architecture_version": "curvature_stage1_v1",
+    "curvature": {
+      "alpha_init": 0.1,
+      "alpha_override": null,
+      "alpha_parameterization": "softplus",
+      "center": 0.4012991820118967,
+      "score": "incident_bottleneck_max"
+    },
+    "input_feature_names": [
+      "incident_bottleneck_max"
+    ],
+    "residual": {
+      "enabled": false
+    },
+    "stage": 1
+  },
+  "budget_relative_tolerance": 0.05,
+  "checkpoint": "result_2layers\\nn_2layers_stage1_n100_u0.05_b0.10\\checkpoints\\latest\\model",
+  "checkpoint_every_episodes": 20,
+  "consecutive_tx_scale": 3.0,
+  "episodes": 300,
+  "initial_multiplier": 0.0,
+  "model_version": "curvature_stage1_single_alpha",
+  "multiplier_error_clip": 1.0,
+  "multiplier_learning_rate": 0.01,
+  "multiplier_max": 0.15,
+  "neighbor_confidence_time_constant": 20.0,
+  "node_counts": [
+    100
+  ],
+  "per_node_cap_multiplier": 1.5,
+  "target_tx_ratios": [
+    0.1
+  ],
+  "tx_ratio_ema_beta": 0.5,
+  "update_multiplier": false,
+  "update_probabilities": [
+    0.05
+  ],
+  "use_budget_advantage": false,
+  "validation_enabled": false,
+  "validation_every_episodes": 10,
+  "vaoi_reward_scale": 0.1
+}

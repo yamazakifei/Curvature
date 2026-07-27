@@ -72,14 +72,14 @@ class LocalKnowledge:
         transmitted: np.ndarray,
         interference_power: np.ndarray,
         noise_power: float,
-        congestion_ewma_alpha: float,
+        congestion_ewma_beta: float,
     ) -> None:
         transmitted = np.asarray(transmitted, dtype=bool)
         interference_power = np.asarray(interference_power, dtype=float)
         if interference_power.shape != (self.n_nodes,):
             raise ValueError("interference_power must have shape [N]")
-        if noise_power <= 0 or not 0.0 <= congestion_ewma_alpha <= 1.0:
-            raise ValueError("invalid noise power or congestion EWMA alpha")
+        if noise_power <= 0 or not 0.0 <= congestion_ewma_beta <= 1.0:
+            raise ValueError("invalid noise power or congestion EWMA beta")
         self.last_tx_slot[transmitted] = slot
         self.previous_transmitted = transmitted.copy()
         self.consecutive_tx_attempts[transmitted] += 1
@@ -100,6 +100,6 @@ class LocalKnowledge:
         )
         measured_congestion = np.log1p(interference_ratio)
         self.congestion_ewma[silent] = (
-            congestion_ewma_alpha * self.congestion_ewma[silent]
-            + (1.0 - congestion_ewma_alpha) * measured_congestion
+            congestion_ewma_beta * self.congestion_ewma[silent]
+            + (1.0 - congestion_ewma_beta) * measured_congestion
         )

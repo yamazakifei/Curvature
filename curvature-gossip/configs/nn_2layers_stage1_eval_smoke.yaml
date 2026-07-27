@@ -1,0 +1,59 @@
+# Evaluate the Stage-1 smoke checkpoint with its frozen offline curvature center.
+experiment:
+  id: nn_2layers_stage1_eval_smoke
+  master_seed: 20260727
+  slots: 40
+  warmup_slots: 5
+  topology_seeds: [1]
+  channel_seeds: [0]
+  update_seeds: [0]
+topology:
+  type: random_geometric
+  params:
+    n_nodes: 16
+    area_width_m: 120.0
+    area_height_m: 120.0
+    communication_radius_m: 65.0
+    min_degree: 2
+    max_attempts: 1000
+source:
+  update_probability: 0.05
+channel:
+  tx_power_dbm: 20.0
+  pathloss_reference_db: 30.0
+  pathloss_exponent: 2.5
+  shadowing_std_db: 2.0
+  rayleigh_fading: true
+  sinr_threshold_db: 3.0
+curvature:
+  method: distributed_af3
+  normalization: local_degree_bound
+constraints:
+  target_tx_ratio: 0.10
+  per_node_cap_multiplier: 1.5
+observation:
+  congestion_ewma_beta: 0.8
+  congestion_feature_scale: 5.0
+policies:
+  - name: stage1_smoke
+    type: neural_ctde
+    params:
+      checkpoint_path: result_NN/nn_2layers_stage1_smoke/checkpoints/latest/model
+      target_tx_ratio: 0.10
+      update_probability: 0.05
+      actor:
+        stage: 1
+        architecture_version: curvature_stage1_v1
+        input_feature_names: [incident_bottleneck_max]
+        curvature:
+          score: incident_bottleneck_max
+          center: 0.1703811813186813
+          alpha_parameterization: softplus
+          alpha_init: 0.1
+          alpha_override: null
+        residual:
+          enabled: false
+output:
+  root: result_NN/evaluation
+  save_per_slot: false
+  make_plots: false

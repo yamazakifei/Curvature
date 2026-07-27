@@ -24,7 +24,7 @@ def test_congestion_uses_silent_measurements_and_attempt_history_only():
         transmitted=np.array([True, False]),
         interference_power=np.array([9.0, 5.0]),
         noise_power=1.0,
-        congestion_ewma_alpha=0.0,
+        congestion_ewma_beta=0.0,
     )
     assert knowledge.consecutive_tx_attempts.tolist() == [1, 0]
     assert not knowledge.previous_interference_valid[0]
@@ -37,7 +37,7 @@ def test_congestion_uses_silent_measurements_and_attempt_history_only():
         transmitted=np.array([True, False]),
         interference_power=np.array([9.0, 1.0]),
         noise_power=1.0,
-        congestion_ewma_alpha=0.0,
+        congestion_ewma_beta=0.0,
     )
     assert knowledge.consecutive_tx_attempts.tolist() == [2, 0]
     assert knowledge.congestion_ewma[1] == 0.0
