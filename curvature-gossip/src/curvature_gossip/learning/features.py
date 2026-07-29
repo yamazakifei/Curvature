@@ -35,7 +35,23 @@ class Stage1EncodedObservations:
     target_tx_ratios: np.ndarray
 
 
+@dataclass(frozen=True)
+class Stage2EncodedObservations:
+    """Stage-2 local inputs: curvature base inputs plus non-curvature context."""
+
+    curvature_scores: np.ndarray
+    target_tx_ratios: np.ndarray
+    residual_context: np.ndarray
+
+
 STAGE1_FEATURE_NAMES = ("incident_bottleneck_max",)
+STAGE2_CONTEXT_FEATURE_NAMES = (
+    "normalized_degree", "time_since_last_tx", "consecutive_tx_attempts",
+    "congestion_ewma", "self_information_increment", "neighbor_freshness_mean",
+    "neighbor_freshness_max", "neighbor_confidence_mean",
+)
+STAGE2_SCENARIO_CONTEXT_FEATURE_NAMES = ("log_network_size", "update_probability", "target_tx_ratio")
+STAGE2_CONTEXT_INDICES = (0, 1, 2, 3, 6, 7, 8, 10)
 
 
 def _validate_probability(name: str, value: float, strict_lower: bool = False) -> float:
@@ -109,6 +125,59 @@ def encode_stage1_observations(
     return Stage1EncodedObservations(
         curvature_scores=encode_curvature_score(observations),
         target_tx_ratios=np.full(len(observations), target_tx_ratio, dtype=np.float32),
+    )
+
+
+def stage2_context_feature_names(include_scenario_context: bool = False) -> Tuple[str, ...]:
+    """Return the checkpointed Stage-2 context order, excluding the q-base reference."""
+    return STAGE2_CONTEXT_FEATURE_NAMES + (
+        STAGE2_SCENARIO_CONTEXT_FEATURE_NAMES if include_scenario_context else ()
+    )
+
+
+def encode_stage2_context(
+    observations: Sequence[NodeObservation],
+    target_tx_ratio: float,
+    update_probability: float,
+    consecutive_tx_scale: float = 3.0,
+    neighbor_confidence_time_constant: float = 20.0,
+    congestion_feature_scale: float = 5.0,
+    include_scenario_context: bool = False,
+) -> np.ndarray:
+    """Encode the clean Stage-2 context without duplicating curvature-max input."""
+    encoded = encode_observations(
+        observations, target_tx_ratio, update_probability, consecutive_tx_scale,
+        neighbor_confidence_time_constant, congestion_feature_scale,
+    ).node_features
+    context = encoded[:, STAGE2_CONTEXT_INDICES]
+    if include_scenario_context:
+        context = np.concatenate([context, encoded[:, (11, 12, 13)]], axis=1)
+    expected_width = 11 if include_scenario_context else 8
+    if context.shape != (encoded.shape[0], expected_width) or not np.isfinite(context).all():
+        raise ValueError("Stage-2 context must be finite with the configured fixed width")
+    return context.astype(np.float32, copy=False)
+
+
+def encode_stage2_observations(
+    observations: Sequence[NodeObservation],
+    target_tx_ratio: float,
+    update_probability: float,
+    consecutive_tx_scale: float = 3.0,
+    neighbor_confidence_time_constant: float = 20.0,
+    congestion_feature_scale: float = 5.0,
+    include_scenario_context: bool = False,
+) -> Stage2EncodedObservations:
+    """Combine the Stage-1 score with clean local context for the residual MLP."""
+    observations = tuple(observations)
+    target_tx_ratio = _validate_probability("target_tx_ratio", target_tx_ratio, True)
+    return Stage2EncodedObservations(
+        curvature_scores=encode_curvature_score(observations),
+        target_tx_ratios=np.full(len(observations), target_tx_ratio, dtype=np.float32),
+        residual_context=encode_stage2_context(
+            observations, target_tx_ratio, update_probability, consecutive_tx_scale,
+            neighbor_confidence_time_constant, congestion_feature_scale,
+            include_scenario_context,
+        ),
     )
 
 

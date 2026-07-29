@@ -22,7 +22,10 @@ from ..random_streams import make_rng
 from ..simulator import GossipSimulator, SimulationParameters
 from ..topology import get_topology_generator
 from .ctde_ppo import CTDEPPO
-from .features import encode_curvature_score, encode_global_state, encode_observations, encode_stage1_observations
+from .features import (
+    encode_curvature_score, encode_global_state, encode_observations,
+    encode_stage1_observations, encode_stage2_observations, stage2_context_feature_names,
+)
 from .validation import evaluate_fixed_validation, probability_statistics, validation_scenarios
 
 
@@ -172,20 +175,41 @@ def _save_checkpoint(model: CTDEPPO, output_directory: Path, name: str, episode:
 
 
 def _stage1_actor_config(raw: Mapping) -> Mapping:
-    """Validate the parameter-free-context Stage-1 actor configuration."""
+    """Validate Stage-1 or Stage-2 hierarchy settings and checkpoint feature metadata."""
     actor = dict(raw.get("actor", {}))
-    if int(actor.get("stage", 0)) != 1:
+    stage = int(actor.get("stage", 0))
+    if stage not in (1, 2):
         return actor
     curvature = dict(actor.get("curvature", {}))
     if curvature.get("score", "incident_bottleneck_max") != "incident_bottleneck_max":
         raise ValueError("Stage 1 requires curvature.score=incident_bottleneck_max")
     if curvature.get("alpha_parameterization", "softplus") != "softplus":
         raise ValueError("Stage 1 requires softplus alpha parameterization")
-    if bool(dict(actor.get("residual", {})).get("enabled", False)):
+    residual = dict(actor.get("residual", {}))
+    if stage == 1 and bool(residual.get("enabled", False)):
         raise ValueError("Stage 1 must not instantiate a residual MLP")
     actor["curvature"] = curvature
-    actor["architecture_version"] = "curvature_stage1_v1"
-    actor["input_feature_names"] = ["incident_bottleneck_max"]
+    if stage == 1:
+        actor["architecture_version"] = "curvature_stage1_v1"
+        actor["input_feature_names"] = ["incident_bottleneck_max"]
+        return actor
+    if not bool(residual.get("enabled", False)):
+        raise ValueError("Stage 2 requires residual.enabled=true")
+    if list(residual.get("hidden_dims", [64, 64])) != [64, 64]:
+        raise ValueError("Stage 2 requires residual.hidden_dims=[64, 64]")
+    if residual.get("activation", "relu") != "relu" or not bool(residual.get("zero_init_output", True)):
+        raise ValueError("Stage 2 requires ReLU hidden layers and a zero-initialized output")
+    if not bool(residual.get("use_stage1_reference", True)) or not bool(residual.get("detach_stage1_reference", True)):
+        raise ValueError("Stage 2 requires exactly one detached Stage-1 probability reference")
+    if bool(residual.get("include_curvature_mean", False)) or bool(residual.get("include_curvature_freshness_interaction", False)):
+        raise ValueError("the clean Stage-2 model excludes optional curvature augmentations")
+    residual.setdefault("delta_max", 1.0)
+    residual.setdefault("freeze_stage1", False)
+    actor["residual"] = residual
+    actor["architecture_version"] = "curvature_stage2_residual_v1"
+    actor["input_feature_names"] = list(stage2_context_feature_names(
+        bool(residual.get("include_scenario_context", False))
+    )) + ["detached_stage1_probability"]
     return actor
 
 
@@ -223,7 +247,7 @@ def train_ctde(config_path: str):
     config = load_config(config_path)
     raw = config.raw
     actor_config = _stage1_actor_config(raw)
-    if int(actor_config.get("stage", 0)) == 1:
+    if int(actor_config.get("stage", 0)) in (1, 2):
         frozen_center = _freeze_stage1_center(raw, actor_config)
         actor_config = dict(actor_config)
         actor_config["curvature"] = dict(actor_config["curvature"], center=frozen_center)
@@ -275,6 +299,10 @@ def train_ctde(config_path: str):
 
     seed = int(raw["experiment"].get("master_seed", 0))
     model = CTDEPPO(learning_rate=float(training.get("learning_rate", 3e-4)), clip_ratio=float(training.get("clip_ratio", 0.2)), entropy_coefficient=float(training.get("entropy_coefficient", 0.01)), seed=seed, actor_config=actor_config)
+    initial_checkpoint = training.get("initial_checkpoint")
+    restored_variables = ()
+    if initial_checkpoint:
+        restored_variables = model.restore_compatible(str(initial_checkpoint))
     action_rng = np.random.default_rng(seed + 7919)
     targets = [float(value) for value in training.get("target_tx_ratios", [constraints.get("target_tx_ratio", 0.1)])]
     node_counts = list(training.get("node_counts", [None])) or [None]
@@ -331,15 +359,31 @@ def train_ctde(config_path: str):
                 constraint_state[case_key] = {"multiplier": initial_multiplier, "tx_ratio_ema": target}
             multiplier_used = constraint_state[case_key]["multiplier"]
             encoded_steps, actions_steps, probability_steps, old_log_steps = [], [], [], []
+            base_probability_steps, residual_delta_steps = [], []
             value_steps, global_states, vaoi_rewards, costs, vaoi_values = [], [], [], [], []
             last_tx_ratio = 0.0
             for slot in range(simulator.parameters.slots):
                 observations = simulator.begin_step(slot)
-                encoded = (encode_stage1_observations(observations, target) if model.actor_stage == 1 else
-                           encode_observations(observations, target, simulator.parameters.update_probability, consecutive_tx_scale, confidence_time_constant, congestion_feature_scale))
+                if model.actor_stage == 1:
+                    encoded = encode_stage1_observations(observations, target)
+                elif model.actor_stage == 2:
+                    encoded = encode_stage2_observations(
+                        observations, target, simulator.parameters.update_probability,
+                        consecutive_tx_scale, confidence_time_constant, congestion_feature_scale,
+                        bool(actor_config["residual"].get("include_scenario_context", False)),
+                    )
+                else:
+                    encoded = encode_observations(
+                        observations, target, simulator.parameters.update_probability,
+                        consecutive_tx_scale, confidence_time_constant, congestion_feature_scale,
+                    )
                 global_state = encode_global_state(simulator.centralized_state(last_tx_ratio), target, simulator.parameters.update_probability, simulator.state.n_nodes)
                 value = float(model.value(global_state)[0])
                 actions, probabilities, old_log_probabilities = model.act(encoded, action_rng)
+                if model.actor_stage == 2:
+                    components = model.stage2_diagnostics(encoded)
+                    base_probability_steps.append(components["q_base"].astype(np.float32))
+                    residual_delta_steps.append(components["delta"].astype(np.float32))
                 outcome = simulator.complete_step(actions.astype(bool))
                 encoded_steps.append(encoded)
                 actions_steps.append(actions)
@@ -356,7 +400,7 @@ def train_ctde(config_path: str):
             normalized_vaoi_advantages = _standardize(vaoi_advantages)
             actor_vaoi_advantages = np.concatenate([
                 np.full(
-                    (step.curvature_scores if model.actor_stage == 1 else step.node_features).shape[0],
+                    (step.curvature_scores if model.actor_stage in (1, 2) else step.node_features).shape[0],
                     normalized_vaoi_advantages[index], dtype=np.float32,
                 ) for index, step in enumerate(encoded_steps)
             ])
@@ -413,6 +457,22 @@ def train_ctde(config_path: str):
                     "q_base_min": float(np.min(q_base)), "q_base_max": float(np.max(q_base)),
                     "corr_s_kappa_q_base": float(np.corrcoef(scores, q_base)[0, 1]) if np.std(scores) > 0.0 else 0.0,
                 })
+            elif model.actor_stage == 2:
+                diagnostics = model.stage2_diagnostics(encoded_steps[-1])
+                scores = np.concatenate([item.curvature_scores[:, 0] for item in encoded_steps])
+                q_base = np.concatenate(base_probability_steps)
+                delta = np.concatenate(residual_delta_steps)
+                row.update({
+                    "alpha_raw": float(diagnostics["alpha_raw"]),
+                    "alpha_kappa": float(diagnostics["alpha_kappa"]),
+                    "q_base_mean": float(np.mean(q_base)), "q_base_std": float(np.std(q_base)),
+                    "q_base_min": float(np.min(q_base)), "q_base_max": float(np.max(q_base)),
+                    "residual_delta_mean": float(np.mean(delta)), "residual_delta_std": float(np.std(delta)),
+                    "residual_delta_min": float(np.min(delta)), "residual_delta_max": float(np.max(delta)),
+                    "q_final_mean": float(np.mean(probability_steps)),
+                    "q_final_std": float(np.std(probability_steps)),
+                    "corr_s_kappa_q_base": float(np.corrcoef(scores, q_base)[0, 1]) if np.std(scores) > 0.0 else 0.0,
+                })
             row.update(probability_statistics(probability_steps))
             if not all(np.isfinite(value) for value in row.values() if isinstance(value, (float, np.floating))):
                 raise FloatingPointError("V3 training diagnostics must be finite")
@@ -426,7 +486,8 @@ def train_ctde(config_path: str):
             if validation_enabled and validation_trigger == "train_mean_vaoi_improvement" and is_train_best:
                 run_validation(completed_episodes, "train_mean_vaoi_best", row["mean_VAoI"])
             elif validation_enabled and validation_trigger == "every_episodes" and completed_episodes % validation_every == 0:
-                _save_checkpoint(model, output_directory, "latest", completed_episodes, config_path, actor_config)
+                if checkpoint_mode == "periodic_and_latest":
+                    _save_checkpoint(model, output_directory, "latest", completed_episodes, config_path, actor_config)
                 run_validation(completed_episodes, "episode_{:06d}".format(completed_episodes))
             if checkpoint_mode == "periodic_and_latest" and completed_episodes % checkpoint_every == 0:
                 _save_checkpoint(
@@ -452,7 +513,11 @@ def train_ctde(config_path: str):
     metadata = {
         "checkpoint": str(selected_checkpoint), "episodes": len(history),
         "target_tx_ratios": targets, "node_counts": node_counts, "update_probabilities": update_probabilities,
-        "model_version": "curvature_stage1_single_alpha" if model.actor_stage == 1 else "node_only_freshness_lagrangian_v3", "actor": _json_safe(actor_config), "vaoi_reward_scale": vaoi_reward_scale,
+        "model_version": ("curvature_stage2_residual" if model.actor_stage == 2 else
+                          "curvature_stage1_single_alpha" if model.actor_stage == 1 else
+                          "node_only_freshness_lagrangian_v3"),
+        "actor": _json_safe(actor_config), "initial_checkpoint": initial_checkpoint,
+        "restored_variables": list(restored_variables), "vaoi_reward_scale": vaoi_reward_scale,
         "consecutive_tx_scale": consecutive_tx_scale, "neighbor_confidence_time_constant": confidence_time_constant,
         "initial_multiplier": initial_multiplier, "multiplier_learning_rate": multiplier_learning_rate,
         "multiplier_max": multiplier_max, "tx_ratio_ema_beta": tx_ratio_ema_beta,

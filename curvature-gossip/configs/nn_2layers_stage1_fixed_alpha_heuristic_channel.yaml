@@ -1,0 +1,84 @@
+# 功能：在 Stage-2 启发式物理信道下评估固定 Stage-1 曲率 alpha。
+# 该配置不训练且不启用第二层 residual；search_stage1_fixed_alpha.py 会覆盖 update_probability 和 alpha。
+experiment:
+  id: nn_2layers_stage1_fixed_alpha_heuristic_channel_n100_b0.10
+  master_seed: 20260723
+  slots: 500
+topology:
+  type: soft_two_community
+  params:
+    n_nodes: 100
+    cluster_sizes: [50, 50]
+    area_width_m: 400.0
+    area_height_m: 300.0
+    communication_radius_m: 40.0
+    center_separation_m: 160.0
+    cluster_radius_m: 80.0
+    cross_edge_count_range: [2, 4]
+    min_cross_endpoints_per_cluster: 2
+    min_degree: 3
+    require_induced_cluster_connected: true
+    min_edge_connectivity: 2
+    max_attempts: 2000
+source:
+  update_probability: 0.20
+channel:
+  # 与 nn_2layers_stage2_heuristic_channel.yaml 保持完全相同的物理信道。
+  tx_power_dbm: 20.0
+  pathloss_reference_db: 30.0
+  reference_distance_m: 1.0
+  pathloss_exponent: 2.5
+  shadowing_std_db: 0.0
+  reciprocal_shadowing: true
+  rayleigh_fading: false
+  noise_psd_dbm_per_hz: -174.0
+  bandwidth_hz: 1000000.0
+  noise_figure_db: 5.0
+  sinr_threshold_db: -3.0
+curvature:
+  method: distributed_af3
+  normalization: local_degree_bound
+constraints:
+  target_tx_ratio: 0.10
+  per_node_cap_multiplier: 1.5
+actor:
+  stage: 1
+  curvature:
+    score: incident_bottleneck_max
+    # 直接采用可比较的 Stage-2 保存中心，避免中心校准成为额外变量。
+    center: 0.4012991820118967
+    alpha_parameterization: softplus
+    alpha_init: 1.5
+    alpha_override: null
+  residual:
+    enabled: false
+observation:
+  consecutive_tx_scale: 3.0
+  neighbor_confidence_time_constant: 20.0
+  congestion_ewma_beta: 0.8
+  congestion_feature_scale: 5.0
+training:
+  # 仅为固定 alpha 评估保留的拓扑和参数记录；本配置不执行 PPO 更新。
+  episodes: 300
+  rollout_slots: 400
+  topology_seed_start: 40000
+  target_tx_ratios: [0.10]
+  node_counts: [100]
+  update_probabilities: [0.20]
+validation:
+  enabled: true
+  scenarios:
+    - {id: v00, topology_seed: 51000, source_update_seed: 61000, channel_shadowing_seed: 71000, channel_fading_seed: 81000, policy_action_seed: 91000, slots: 500, n_nodes: 100, update_probability: 0.20, target_tx_ratio: 0.10}
+    - {id: v01, topology_seed: 51001, source_update_seed: 61001, channel_shadowing_seed: 71001, channel_fading_seed: 81001, policy_action_seed: 91001, slots: 500, n_nodes: 100, update_probability: 0.20, target_tx_ratio: 0.10}
+    - {id: v02, topology_seed: 51002, source_update_seed: 61002, channel_shadowing_seed: 71002, channel_fading_seed: 81002, policy_action_seed: 91002, slots: 500, n_nodes: 100, update_probability: 0.20, target_tx_ratio: 0.10}
+    - {id: v03, topology_seed: 51003, source_update_seed: 61003, channel_shadowing_seed: 71003, channel_fading_seed: 81003, policy_action_seed: 91003, slots: 500, n_nodes: 100, update_probability: 0.20, target_tx_ratio: 0.10}
+    - {id: v04, topology_seed: 51004, source_update_seed: 61004, channel_shadowing_seed: 71004, channel_fading_seed: 81004, policy_action_seed: 91004, slots: 500, n_nodes: 100, update_probability: 0.20, target_tx_ratio: 0.10}
+    - {id: v05, topology_seed: 51005, source_update_seed: 61005, channel_shadowing_seed: 71005, channel_fading_seed: 81005, policy_action_seed: 91005, slots: 500, n_nodes: 100, update_probability: 0.20, target_tx_ratio: 0.10}
+    - {id: v06, topology_seed: 51006, source_update_seed: 61006, channel_shadowing_seed: 71006, channel_fading_seed: 81006, policy_action_seed: 91006, slots: 500, n_nodes: 100, update_probability: 0.20, target_tx_ratio: 0.10}
+    - {id: v07, topology_seed: 51007, source_update_seed: 61007, channel_shadowing_seed: 71007, channel_fading_seed: 81007, policy_action_seed: 91007, slots: 500, n_nodes: 100, update_probability: 0.20, target_tx_ratio: 0.10}
+    - {id: v08, topology_seed: 51008, source_update_seed: 61008, channel_shadowing_seed: 71008, channel_fading_seed: 81008, policy_action_seed: 91008, slots: 500, n_nodes: 100, update_probability: 0.20, target_tx_ratio: 0.10}
+    - {id: v09, topology_seed: 51009, source_update_seed: 61009, channel_shadowing_seed: 71009, channel_fading_seed: 81009, policy_action_seed: 91009, slots: 500, n_nodes: 100, update_probability: 0.20, target_tx_ratio: 0.10}
+output:
+  root: result_2layers
+  save_per_slot: false
+  make_plots: false

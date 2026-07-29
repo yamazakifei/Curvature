@@ -1,0 +1,16 @@
+{
+  "alpha_values": [
+    0.5,
+    1.0,
+    1.2,
+    1.5,
+    1.8
+  ],
+  "curvature_center": 0.4012991820118967,
+  "per_scenario_csv": "fixed_alpha_grid_per_scenario.csv",
+  "source_config": "configs/nn_2layers_stage1_fixed_alpha_heuristic_channel.yaml",
+  "summary_csv": "fixed_alpha_grid_summary.csv",
+  "update_probabilities": [
+    0.05
+  ]
+}

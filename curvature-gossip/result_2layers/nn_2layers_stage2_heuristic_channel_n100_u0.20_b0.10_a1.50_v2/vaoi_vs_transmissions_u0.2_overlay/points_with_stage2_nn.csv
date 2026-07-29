@@ -1,0 +1,20 @@
+point_id,legend,policy,tx_probability,q_max,threshold,curvature_weight,congestion_backoff_weight,attempt_backoff_factor,independent_runs,avg_tx_per_slot,avg_tx_per_slot_ci95,mean_VAoI,mean_VAoI_ci95,experiment_id
+R1,R-random,random,0.07,,,,,,5,7.039789473684211,0.08742386613553013,9.41403525784157,0.6105584905520837,test_vaoi_vs_transmissions_R01_p0p07
+R2,R-random,random,0.1,,,,,,5,10.015999999999998,0.10870982363670997,8.140234981392874,0.3073293770557798,test_vaoi_vs_transmissions_R02_p0p1
+R3,R-random,random,0.12,,,,,,5,12.000421052631578,0.14235580166272133,8.06557056884636,0.32897332287821823,test_vaoi_vs_transmissions_R03_p0p12
+R4,R-random,random,0.15,,,,,,5,14.963578947368422,0.16957927987160681,8.82418851674641,0.4232585299626343,test_vaoi_vs_transmissions_R04_p0p15
+F1,F-freshness-backoff,freshness_backoff,,0.3,0.5,,0.04,0.9,5,12.853684210526316,0.2430965638762117,8.10845767145136,0.3098390684146231,test_vaoi_vs_transmissions_F01_q0p3_th0p5_cb0p04_ab0p9
+F2,F-freshness-backoff,freshness_backoff,,0.35,0.5,,0.04,0.9,5,14.995789473684209,0.33304570649530735,8.646846379585318,0.28234674234471036,test_vaoi_vs_transmissions_F02_q0p35_th0p5_cb0p04_ab0p9
+F3,F-freshness-backoff,freshness_backoff,,0.4,0.5,,0.08,0.85,5,9.92863157894737,0.09952764353257204,7.980747878787875,0.4515701179385293,test_vaoi_vs_transmissions_F03_q0p4_th0p5_cb0p08_ab0p85
+F4,F-freshness-backoff,freshness_backoff,,0.4,0.6,,0.08,0.85,5,8.92,0.12381526047205062,8.220726400850618,0.4993285339121545,test_vaoi_vs_transmissions_F04_q0p4_th0p6_cb0p08_ab0p85
+F5,F-freshness-backoff,freshness_backoff,,0.45,0.5,,0.08,0.85,5,10.920210526315788,0.12620625384103318,7.835558341307815,0.3901861834757139,test_vaoi_vs_transmissions_F05_q0p45_th0p5_cb0p08_ab0p85
+F6,F-freshness-backoff,freshness_backoff,,0.45,0.6,,0.08,0.85,5,9.805894736842106,0.1407469924143472,8.015148771929821,0.43938901710296013,test_vaoi_vs_transmissions_F06_q0p45_th0p6_cb0p08_ab0p85
+F7,F-freshness-backoff,freshness_backoff,,0.5,0.6,,0.08,0.8,5,10.579157894736841,0.1588449367540873,7.800411951089846,0.4169693340904498,test_vaoi_vs_transmissions_F07_q0p5_th0p6_cb0p08_ab0p8
+C1,C-orc_freshness-backoff,orc_freshness_backoff,,0.35,0.5,0.5,0.04,0.9,5,15.548842105263157,0.22841739025926444,8.72483255715046,0.3737576305700434,test_vaoi_vs_transmissions_C01_q0p35_th0p5_cw0p5_cb0p04_ab0p9
+C2,C-orc_freshness-backoff,orc_freshness_backoff,,0.4,0.6,0.75,0.08,0.85,5,9.441894736842105,0.05530802613657997,7.659133439659752,0.32707916632636935,test_vaoi_vs_transmissions_C02_q0p4_th0p6_cw0p75_cb0p08_ab0p85
+C3,C-orc_freshness-backoff,orc_freshness_backoff,,0.4,0.6,1.0,0.08,0.85,5,9.596421052631579,0.06415923487223514,7.580807379053693,0.3115798143343539,test_vaoi_vs_transmissions_C03_q0p4_th0p6_cw1_cb0p08_ab0p85
+C4,C-orc_freshness-backoff,orc_freshness_backoff,,0.45,0.6,0.75,0.08,0.85,5,10.404842105263159,0.07466123452077521,7.553716023391813,0.2662476889052173,test_vaoi_vs_transmissions_C04_q0p45_th0p6_cw0p75_cb0p08_ab0p85
+C5,C-orc_freshness-backoff,orc_freshness_backoff,,0.45,0.6,1.0,0.08,0.8,5,10.548,0.061999868608564275,7.4900035725677885,0.2608164243628944,test_vaoi_vs_transmissions_C05_q0p45_th0p6_cw1_cb0p08_ab0p8
+C6,C-orc_freshness-backoff,orc_freshness_backoff,,0.5,0.7,1.25,0.12,0.8,5,6.901894736842105,0.13071110749343626,8.491201169590644,0.43776806439432436,test_vaoi_vs_transmissions_C06_q0p5_th0p7_cw1p25_cb0p12_ab0p8
+C7,C-orc_freshness-backoff,orc_freshness_backoff,,0.55,0.7,1.25,0.12,0.8,5,7.389473684210526,0.12569187316851238,8.182133333333333,0.4350965935976761,test_vaoi_vs_transmissions_C07_q0p55_th0p7_cw1p25_cb0p12_ab0p8
+NN,N-distributed NN,stage2_nn,,,,,,,5,9.822315789473684,0.3231602129592828,7.150212780435936,0.25890375827820156,

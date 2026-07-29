@@ -1,0 +1,2 @@
+point_id,legend,policy,independent_runs,avg_tx_per_slot,avg_tx_per_slot_ci95,mean_VAoI,mean_VAoI_ci95
+NN,N-distributed NN,stage2_nn,5,9.822315789473684,0.3231602129592828,7.150212780435936,0.25890375827820156

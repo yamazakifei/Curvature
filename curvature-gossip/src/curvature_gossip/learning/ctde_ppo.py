@@ -1,7 +1,8 @@
-"""Implement CTDE PPO with a legacy V3 actor or the Stage-1 curvature actor.
+"""Implement legacy, Stage-1, and hierarchical Stage-2 CTDE PPO actors.
 
-Stage 1 deliberately has one shared actor parameter, ``alpha_raw``.  The
-centralized critic remains unchanged and is used only while training.
+Stage 1 owns only a shared curvature alpha.  Stage 2 adds a local-context
+residual MLP whose input explicitly includes a detached Stage-1 probability.
+The centralized critic remains training-only for every actor architecture.
 """
 
 from pathlib import Path
@@ -21,8 +22,8 @@ class CTDEPPO:
 
         self.actor_config = dict(actor_config or {})
         self.actor_stage = int(self.actor_config.get("stage", 0))
-        if self.actor_stage not in (0, 1):
-            raise ValueError("CTDEPPO supports legacy stage 0 or Stage-1 actor only")
+        if self.actor_stage not in (0, 1, 2):
+            raise ValueError("CTDEPPO supports legacy stage 0, Stage 1, or Stage 2 actors")
         self.tf = tensorflow.compat.v1
         self.tf.disable_v2_behavior()
         self.graph = self.tf.Graph()
@@ -40,33 +41,69 @@ class CTDEPPO:
             raise ValueError("actor.curvature.alpha_init must be finite and positive")
         return float(np.log(np.expm1(value)))
 
+    def _build_curvature_base(self):
+        """Build the shared curvature base logit used by both hierarchical stages."""
+        tf = self.tf
+        curvature = dict(self.actor_config.get("curvature", {}))
+        center = float(curvature.get("center", 0.0))
+        override = curvature.get("alpha_override")
+        if not np.isfinite(center):
+            raise ValueError("actor.curvature.center must be finite")
+        if override is not None and (not np.isfinite(float(override)) or float(override) < 0.0):
+            raise ValueError("actor.curvature.alpha_override must be null or nonnegative")
+        self.curvature_scores = tf.placeholder(tf.float32, [None, 1], name="curvature_scores")
+        self.target_tx_ratios = tf.placeholder(tf.float32, [None], name="target_tx_ratios")
+        with tf.variable_scope("actor"):
+            self.alpha_raw = tf.get_variable(
+                "alpha_raw", initializer=self._inverse_softplus(float(curvature.get("alpha_init", 0.1)))
+            )
+            self.alpha_kappa = tf.nn.softplus(self.alpha_raw, name="alpha_kappa")
+            effective_alpha = (
+                tf.constant(float(override), dtype=tf.float32, name="alpha_override")
+                if override is not None else self.alpha_kappa
+            )
+            safe_b = tf.clip_by_value(self.target_tx_ratios, 1e-6, 1.0 - 1e-6)
+            base_logit = tf.log(safe_b) - tf.log(1.0 - safe_b)
+            self.base_logits = base_logit + effective_alpha * (self.curvature_scores[:, 0] - center)
+            self.base_probabilities = tf.nn.sigmoid(self.base_logits, name="stage1_probability")
+        self.alpha_override_active = override is not None
+
     def _build_actor(self):
         tf = self.tf
-        if self.actor_stage == 1:
-            curvature = dict(self.actor_config.get("curvature", {}))
-            center = float(curvature.get("center", 0.0))
-            override = curvature.get("alpha_override")
-            if not np.isfinite(center):
-                raise ValueError("actor.curvature.center must be finite")
-            if override is not None and (not np.isfinite(float(override)) or float(override) < 0.0):
-                raise ValueError("actor.curvature.alpha_override must be null or nonnegative")
-            self.curvature_scores = tf.placeholder(tf.float32, [None, 1], name="curvature_scores")
-            self.target_tx_ratios = tf.placeholder(tf.float32, [None], name="target_tx_ratios")
-            with tf.variable_scope("actor"):
-                self.alpha_raw = tf.get_variable(
-                    "alpha_raw", initializer=self._inverse_softplus(float(curvature.get("alpha_init", 0.1)))
-                )
-                self.alpha_kappa = tf.nn.softplus(self.alpha_raw, name="alpha_kappa")
-                effective_alpha = (
-                    tf.constant(float(override), dtype=tf.float32, name="alpha_override")
-                    if override is not None else self.alpha_kappa
-                )
-                safe_b = tf.clip_by_value(self.target_tx_ratios, 1e-6, 1.0 - 1e-6)
-                base_logit = tf.log(safe_b) - tf.log(1.0 - safe_b)
-                self.base_logits = base_logit + effective_alpha * (self.curvature_scores[:, 0] - center)
+        if self.actor_stage in (1, 2):
+            self._build_curvature_base()
+            if self.actor_stage == 1:
                 self.logits = tf.identity(self.base_logits, name="final_logits")
-                self.probabilities = tf.nn.sigmoid(self.logits, name="transmission_probability")
-            self.alpha_override_active = override is not None
+                self.probabilities = tf.identity(self.base_probabilities, name="transmission_probability")
+                self.residual_delta = self.residual_input = None
+                return
+
+            residual = dict(self.actor_config.get("residual", {}))
+            context_width = 11 if bool(residual.get("include_scenario_context", False)) else 8
+            hidden_dims = list(residual.get("hidden_dims", [64, 64]))
+            if hidden_dims != [64, 64]:
+                raise ValueError("Stage 2 requires residual.hidden_dims=[64, 64]")
+            delta_max = float(residual.get("delta_max", 1.0))
+            if not np.isfinite(delta_max) or delta_max <= 0.0:
+                raise ValueError("Stage 2 residual.delta_max must be finite and positive")
+            self.residual_context = tf.placeholder(tf.float32, [None, context_width], name="residual_context")
+            # The detached first-layer probability is the ninth (or twelfth) MLP input.
+            q_base_reference = tf.stop_gradient(
+                tf.expand_dims(self.base_probabilities, axis=1), name="detached_stage1_reference"
+            )
+            self.residual_input = tf.concat(
+                [self.residual_context, q_base_reference], axis=1, name="residual_input"
+            )
+            with tf.variable_scope("actor/residual_mlp"):
+                hidden = tf.layers.dense(self.residual_input, 64, activation=tf.nn.relu, name="dense_1")
+                hidden = tf.layers.dense(hidden, 64, activation=tf.nn.relu, name="dense_2")
+                residual_raw = tf.squeeze(tf.layers.dense(
+                    hidden, 1, kernel_initializer=tf.zeros_initializer(), bias_initializer=tf.zeros_initializer(),
+                    name="delta_logit",
+                ), axis=1)
+            self.residual_delta = tf.identity(delta_max * tf.tanh(residual_raw), name="residual_delta")
+            self.logits = tf.identity(self.base_logits + self.residual_delta, name="final_logits")
+            self.probabilities = tf.nn.sigmoid(self.logits, name="transmission_probability")
             return
 
         self.node_features = tf.placeholder(tf.float32, [None, NODE_FEATURE_DIM], name="node_features")
@@ -81,6 +118,7 @@ class CTDEPPO:
             self.probabilities = tf.clip_by_value(tf.nn.sigmoid(self.logits), 1e-6, 1.0 - 1e-6)
         self.alpha_raw = self.alpha_kappa = None
         self.alpha_override_active = False
+        self.base_logits = self.base_probabilities = self.residual_delta = self.residual_input = None
 
     def _build_graph(self, learning_rate, clip_ratio, entropy_coefficient):
         tf = self.tf
@@ -109,23 +147,42 @@ class CTDEPPO:
         gradients = tf.gradients(self.surrogate_actor_loss, actor_variables)
         self.policy_gradient_norm_op = tf.global_norm([item for item in gradients if item is not None])
         critic_variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope="critic")
-        actor_update_variables = [] if self.alpha_override_active else actor_variables
+        if self.actor_stage == 1:
+            actor_update_variables = [] if self.alpha_override_active else actor_variables
+        elif self.actor_stage == 2:
+            freeze_stage1 = bool(dict(self.actor_config.get("residual", {})).get("freeze_stage1", False))
+            actor_update_variables = [
+                variable for variable in actor_variables
+                if not (variable.name.startswith("actor/alpha_raw") and (freeze_stage1 or self.alpha_override_active))
+            ]
+        else:
+            actor_update_variables = actor_variables
         self.actor_train_op = (tf.train.AdamOptimizer(learning_rate).minimize(self.actor_loss, var_list=actor_update_variables)
                                if actor_update_variables else tf.no_op())
         self.critic_train_op = tf.train.AdamOptimizer(learning_rate).minimize(self.critic_loss, var_list=critic_variables)
 
     def _encoded_feed(self, encoded):
+        if self.actor_stage == 2:
+            return {self.curvature_scores: encoded.curvature_scores, self.target_tx_ratios: encoded.target_tx_ratios,
+                    self.residual_context: encoded.residual_context}
         if self.actor_stage == 1:
             return {self.curvature_scores: encoded.curvature_scores, self.target_tx_ratios: encoded.target_tx_ratios}
         return {self.node_features: encoded.node_features}
 
     def actor_batch_inputs(self, encoded_steps):
+        if self.actor_stage == 2:
+            return {"curvature_scores": np.concatenate([item.curvature_scores for item in encoded_steps]),
+                    "target_tx_ratios": np.concatenate([item.target_tx_ratios for item in encoded_steps]),
+                    "residual_context": np.concatenate([item.residual_context for item in encoded_steps])}
         if self.actor_stage == 1:
             return {"curvature_scores": np.concatenate([item.curvature_scores for item in encoded_steps]),
                     "target_tx_ratios": np.concatenate([item.target_tx_ratios for item in encoded_steps])}
         return {"node_features": np.concatenate([item.node_features for item in encoded_steps])}
 
     def _actor_batch_feed(self, batch):
+        if self.actor_stage == 2:
+            return {self.curvature_scores: batch["curvature_scores"], self.target_tx_ratios: batch["target_tx_ratios"],
+                    self.residual_context: batch["residual_context"]}
         if self.actor_stage == 1:
             return {self.curvature_scores: batch["curvature_scores"], self.target_tx_ratios: batch["target_tx_ratios"]}
         return {self.node_features: batch["node_features"]}
@@ -147,7 +204,11 @@ class CTDEPPO:
 
     def update(self, actor_batch: Mapping, critic_batch: Mapping, epochs=4):
         actor_feed = self._actor_batch_feed(actor_batch)
-        actor_feed.update({self.actions: actor_batch["actions"], self.old_log_probabilities: actor_batch["old_log_probabilities"], self.advantages: actor_batch["advantages"]})
+        actor_feed.update({
+            self.actions: actor_batch["actions"],
+            self.old_log_probabilities: actor_batch["old_log_probabilities"],
+            self.advantages: actor_batch["advantages"],
+        })
         critic_feed = {self.global_states: critic_batch["global_states"], self.returns: critic_batch["returns"]}
         for _ in range(int(epochs)):
             actor_loss, entropy, approx_kl, clip_fraction, _ = self.session.run(
@@ -168,6 +229,17 @@ class CTDEPPO:
                                    "q_base": self.probabilities}, feed_dict=self._encoded_feed(encoded))
         return {key: np.asarray(value) for key, value in values.items()}
 
+    def stage2_diagnostics(self, encoded):
+        """Return base, residual, and final probabilities for Stage-2 logs and tests."""
+        if self.actor_stage != 2:
+            return {}
+        values = self.session.run({
+            "alpha_raw": self.alpha_raw, "alpha_kappa": self.alpha_kappa,
+            "q_base": self.base_probabilities, "delta": self.residual_delta,
+            "q_final": self.probabilities, "residual_input": self.residual_input,
+        }, feed_dict=self._encoded_feed(encoded))
+        return {key: np.asarray(value) for key, value in values.items()}
+
     def variable_snapshot(self):
         with self.graph.as_default():
             variables = self.tf.global_variables()
@@ -179,6 +251,22 @@ class CTDEPPO:
 
     def restore(self, checkpoint_prefix):
         self.saver.restore(self.session, str(checkpoint_prefix))
+
+    def restore_compatible(self, checkpoint_prefix):
+        """Restore matching old-stage variables while retaining newly initialized MLP variables."""
+        reader = self.tf.train.NewCheckpointReader(str(checkpoint_prefix))
+        available = reader.get_variable_to_shape_map()
+        with self.graph.as_default():
+            variables = self.tf.global_variables()
+        matched = {
+            variable.name.split(":")[0]: variable for variable in variables
+            if variable.name.split(":")[0] in available
+            and tuple(variable.shape.as_list()) == tuple(available[variable.name.split(":")[0]])
+        }
+        if not matched:
+            raise ValueError("checkpoint has no variables compatible with the current model")
+        self.tf.train.Saver(var_list=matched).restore(self.session, str(checkpoint_prefix))
+        return tuple(sorted(matched))
 
     def close(self):
         self.session.close()

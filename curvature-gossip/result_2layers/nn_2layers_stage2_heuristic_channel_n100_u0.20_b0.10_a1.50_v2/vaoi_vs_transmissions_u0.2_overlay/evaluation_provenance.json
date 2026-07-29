@@ -1,0 +1,37 @@
+{
+  "channel_fading_rng_labels": [
+    "fading",
+    "topology_seed",
+    "channel_seed",
+    "update_seed"
+  ],
+  "channel_seed": 0,
+  "model_checkpoint": "result_2layers\\nn_2layers_stage2_heuristic_channel_n100_u0.20_b0.10_a1.50_v2\\checkpoints\\best_validation\\model",
+  "model_training_config": "result_2layers\\nn_2layers_stage2_heuristic_channel_n100_u0.20_b0.10_a1.50_v2\\training_config.yaml",
+  "note": "Topology/source/channel streams match the saved sweep; NN retains distributed_af3 curvature and b=0.10 from its training config.",
+  "policy_action_rng_labels": [
+    "policy",
+    "topology_seed",
+    "channel_seed",
+    "update_seed",
+    "stage2_nn"
+  ],
+  "source_sweep_config": "results\\test_vaoi_vs_transmissions_u0.2\\test_vaoi_vs_transmissions_R02_p0p1\\0\\random\\resolved_config.yaml",
+  "source_update_rng_labels": [
+    "updates",
+    "topology_seed",
+    "update_seed"
+  ],
+  "topology_rng_labels": [
+    "topology",
+    "topology_seed"
+  ],
+  "topology_seeds": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "update_seed": 0
+}

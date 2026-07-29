@@ -157,3 +157,7 @@ the supplied training smoke run:
 ```powershell
 conda run --no-capture-output -n GRL_AoI_cpu37 python -m curvature_gossip.cli run --config configs/nn_2layers_stage1_eval_smoke.yaml
 ```
+
+## 启发式物理信道下的固定 alpha 对照（2026-07-28）
+
+`configs/nn_2layers_stage1_fixed_alpha_heuristic_channel.yaml` 用于关闭 Stage-2 residual 后，在当前启发式物理信道（无 shadowing/fading）下评估固定 Stage-1 alpha。已完成 `u=0.05/0.10/0.20`、`b=0.10`、`alpha=0.5/1.0/1.2/1.5/1.8` 的配对验证；完整结果及与 Stage-2 最佳验证 checkpoint 的比较见 `result_2layers/fixed_alpha_grid_heuristic_channel_b0.10/comparison_report.md`。

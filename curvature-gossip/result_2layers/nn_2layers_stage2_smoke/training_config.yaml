@@ -1,0 +1,114 @@
+experiment:
+  id: nn_2layers_stage2_smoke
+  master_seed: 20260727
+  slots: 20
+topology:
+  type: random_geometric
+  params:
+    n_nodes: 12
+    area_width_m: 120.0
+    area_height_m: 120.0
+    communication_radius_m: 70.0
+    min_degree: 2
+    max_attempts: 1000
+source:
+  update_probability: 0.2
+channel:
+  tx_power_dbm: 20.0
+  pathloss_reference_db: 30.0
+  pathloss_exponent: 2.5
+  shadowing_std_db: 2.0
+  rayleigh_fading: true
+  sinr_threshold_db: 3.0
+curvature:
+  method: distributed_af3
+  normalization: local_degree_bound
+constraints:
+  target_tx_ratio: 0.1
+  per_node_cap_multiplier: 1.5
+actor:
+  stage: 2
+  curvature:
+    score: incident_bottleneck_max
+    center: 0.1599296536796537
+    alpha_parameterization: softplus
+    alpha_init: 1.5
+    alpha_override: 1.5
+  residual:
+    enabled: true
+    hidden_dims:
+    - 64
+    - 64
+    activation: relu
+    delta_max: 1.0
+    zero_init_output: true
+    use_stage1_reference: true
+    detach_stage1_reference: true
+    include_scenario_context: false
+    include_curvature_mean: false
+    include_curvature_freshness_interaction: false
+    freeze_stage1: true
+  architecture_version: curvature_stage2_residual_v1
+  input_feature_names:
+  - normalized_degree
+  - time_since_last_tx
+  - consecutive_tx_attempts
+  - congestion_ewma
+  - self_information_increment
+  - neighbor_freshness_mean
+  - neighbor_freshness_max
+  - neighbor_confidence_mean
+  - detached_stage1_probability
+observation:
+  consecutive_tx_scale: 3.0
+  neighbor_confidence_time_constant: 20.0
+  congestion_ewma_beta: 0.8
+  congestion_feature_scale: 5.0
+training:
+  episodes: 2
+  rollout_slots: 20
+  topology_seed_start: 45000
+  center_topology_seeds:
+  - 45000
+  - 45001
+  target_tx_ratios:
+  - 0.1
+  node_counts:
+  - 12
+  update_probabilities:
+  - 0.2
+  learning_rate: 0.0003
+  clip_ratio: 0.2
+  entropy_coefficient: 0.0
+  gamma: 0.99
+  gae_lambda: 0.95
+  ppo_epochs: 4
+  vaoi_reward_scale: 0.1
+  use_budget_advantage: false
+  update_multiplier: false
+  initial_multiplier: 0.0
+  multiplier_learning_rate: 0.01
+  multiplier_max: 0.15
+  tx_ratio_ema_beta: 0.9
+  budget_relative_tolerance: 0.05
+  multiplier_error_clip: 1.0
+validation:
+  enabled: true
+  trigger: every_episodes
+  every_episodes: 1
+  checkpoint_mode: validation_best_only
+  scenarios:
+  - id: smoke_v0
+    topology_seed: 55000
+    source_update_seed: 65000
+    channel_shadowing_seed: 75000
+    channel_fading_seed: 85000
+    policy_action_seed: 95000
+    slots: 20
+    n_nodes: 12
+    update_probability: 0.2
+    target_tx_ratio: 0.1
+output:
+  root: result_2layers
+  save_per_slot: false
+  make_plots: false

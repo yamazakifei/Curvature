@@ -1,7 +1,7 @@
 """Load the node-only CTDE actor and produce decentralized broadcast probabilities."""
 
 from ..learning.ctde_ppo import CTDEPPO
-from ..learning.features import encode_observations, encode_stage1_observations
+from ..learning.features import encode_observations, encode_stage1_observations, encode_stage2_observations
 from ..simulator.observations import NodeObservation
 from .base import DistributedBroadcastPolicy
 
@@ -24,6 +24,7 @@ class NeuralCTDEPolicy(DistributedBroadcastPolicy):
         self.consecutive_tx_scale = float(consecutive_tx_scale)
         self.neighbor_confidence_time_constant = float(neighbor_confidence_time_constant)
         self.congestion_feature_scale = float(congestion_feature_scale)
+        self.actor = dict(actor or {})
         self.model = CTDEPPO(actor_config=actor)
         self.model.restore(checkpoint_path)
 
@@ -39,6 +40,13 @@ class NeuralCTDEPolicy(DistributedBroadcastPolicy):
         """Select the checkpoint-compatible local encoder without global state access."""
         if self.model.actor_stage == 1:
             return encode_stage1_observations(observations, self.target_tx_ratio)
+        if self.model.actor_stage == 2:
+            return encode_stage2_observations(
+                observations, self.target_tx_ratio, self.update_probability,
+                self.consecutive_tx_scale, self.neighbor_confidence_time_constant,
+                self.congestion_feature_scale,
+                bool(self.actor.get("residual", {}).get("include_scenario_context", False)),
+            )
         return encode_observations(
             observations, self.target_tx_ratio, self.update_probability,
             self.consecutive_tx_scale, self.neighbor_confidence_time_constant,
