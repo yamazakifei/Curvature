@@ -1,7 +1,8 @@
 """Implement legacy, Stage-1, and hierarchical Stage-2 CTDE PPO actors.
 
 Stage 1 owns only a shared curvature alpha.  Stage 2 adds a local-context
-residual MLP whose input explicitly includes a detached Stage-1 probability.
+residual MLP, with an explicit no-curvature ablation that omits the Stage-1
+probability reference.
 The centralized critic remains training-only for every actor architecture.
 """
 
@@ -58,13 +59,13 @@ class CTDEPPO:
                 "alpha_raw", initializer=self._inverse_softplus(float(curvature.get("alpha_init", 0.1)))
             )
             self.alpha_kappa = tf.nn.softplus(self.alpha_raw, name="alpha_kappa")
-            effective_alpha = (
+            self.effective_alpha = (
                 tf.constant(float(override), dtype=tf.float32, name="alpha_override")
                 if override is not None else self.alpha_kappa
             )
             safe_b = tf.clip_by_value(self.target_tx_ratios, 1e-6, 1.0 - 1e-6)
             base_logit = tf.log(safe_b) - tf.log(1.0 - safe_b)
-            self.base_logits = base_logit + effective_alpha * (self.curvature_scores[:, 0] - center)
+            self.base_logits = base_logit + self.effective_alpha * (self.curvature_scores[:, 0] - center)
             self.base_probabilities = tf.nn.sigmoid(self.base_logits, name="stage1_probability")
         self.alpha_override_active = override is not None
 
@@ -87,13 +88,18 @@ class CTDEPPO:
             if not np.isfinite(delta_max) or delta_max <= 0.0:
                 raise ValueError("Stage 2 residual.delta_max must be finite and positive")
             self.residual_context = tf.placeholder(tf.float32, [None, context_width], name="residual_context")
-            # The detached first-layer probability is the ninth (or twelfth) MLP input.
-            q_base_reference = tf.stop_gradient(
-                tf.expand_dims(self.base_probabilities, axis=1), name="detached_stage1_reference"
-            )
-            self.residual_input = tf.concat(
-                [self.residual_context, q_base_reference], axis=1, name="residual_input"
-            )
+            use_stage1_reference = bool(residual.get("use_stage1_reference", True))
+            if use_stage1_reference:
+                # The detached first-layer probability is the ninth (or twelfth) MLP input.
+                q_base_reference = tf.stop_gradient(
+                    tf.expand_dims(self.base_probabilities, axis=1), name="detached_stage1_reference"
+                )
+                self.residual_input = tf.concat(
+                    [self.residual_context, q_base_reference], axis=1, name="residual_input"
+                )
+            else:
+                # Strict ablation: no Stage-1 reference or curvature-derived tensor enters the MLP.
+                self.residual_input = tf.identity(self.residual_context, name="residual_input")
             with tf.variable_scope("actor/residual_mlp"):
                 hidden = tf.layers.dense(self.residual_input, 64, activation=tf.nn.relu, name="dense_1")
                 hidden = tf.layers.dense(hidden, 64, activation=tf.nn.relu, name="dense_2")
@@ -119,6 +125,7 @@ class CTDEPPO:
         self.alpha_raw = self.alpha_kappa = None
         self.alpha_override_active = False
         self.base_logits = self.base_probabilities = self.residual_delta = self.residual_input = None
+        self.effective_alpha = None
 
     def _build_graph(self, learning_rate, clip_ratio, entropy_coefficient):
         tf = self.tf
@@ -235,6 +242,7 @@ class CTDEPPO:
             return {}
         values = self.session.run({
             "alpha_raw": self.alpha_raw, "alpha_kappa": self.alpha_kappa,
+            "effective_alpha": self.effective_alpha,
             "q_base": self.base_probabilities, "delta": self.residual_delta,
             "q_final": self.probabilities, "residual_input": self.residual_input,
         }, feed_dict=self._encoded_feed(encoded))

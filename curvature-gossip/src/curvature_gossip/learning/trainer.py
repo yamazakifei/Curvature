@@ -199,17 +199,29 @@ def _stage1_actor_config(raw: Mapping) -> Mapping:
         raise ValueError("Stage 2 requires residual.hidden_dims=[64, 64]")
     if residual.get("activation", "relu") != "relu" or not bool(residual.get("zero_init_output", True)):
         raise ValueError("Stage 2 requires ReLU hidden layers and a zero-initialized output")
-    if not bool(residual.get("use_stage1_reference", True)) or not bool(residual.get("detach_stage1_reference", True)):
-        raise ValueError("Stage 2 requires exactly one detached Stage-1 probability reference")
+    use_stage1_reference = bool(residual.get("use_stage1_reference", True))
+    if use_stage1_reference and not bool(residual.get("detach_stage1_reference", True)):
+        raise ValueError("Stage 2 with a Stage-1 reference requires detach_stage1_reference=true")
     if bool(residual.get("include_curvature_mean", False)) or bool(residual.get("include_curvature_freshness_interaction", False)):
         raise ValueError("the clean Stage-2 model excludes optional curvature augmentations")
+    if not use_stage1_reference:
+        override = curvature.get("alpha_override")
+        if override is None or float(override) != 0.0:
+            raise ValueError("Stage-2 without a Stage-1 reference requires actor.curvature.alpha_override=0.0")
     residual.setdefault("delta_max", 1.0)
     residual.setdefault("freeze_stage1", False)
     actor["residual"] = residual
-    actor["architecture_version"] = "curvature_stage2_residual_v1"
-    actor["input_feature_names"] = list(stage2_context_feature_names(
+    context_features = list(stage2_context_feature_names(
         bool(residual.get("include_scenario_context", False))
-    )) + ["detached_stage1_probability"]
+    ))
+    actor["architecture_version"] = (
+        "curvature_stage2_residual_v1" if use_stage1_reference
+        else "no_curvature_stage2_residual_v1"
+    )
+    actor["input_feature_names"] = (
+        context_features + ["detached_stage1_probability"]
+        if use_stage1_reference else context_features
+    )
     return actor
 
 
@@ -463,8 +475,13 @@ def train_ctde(config_path: str):
                 q_base = np.concatenate(base_probability_steps)
                 delta = np.concatenate(residual_delta_steps)
                 row.update({
+                    "actor_architecture_version": actor_config["architecture_version"],
+                    "use_stage1_reference": bool(actor_config["residual"].get("use_stage1_reference", True)),
                     "alpha_raw": float(diagnostics["alpha_raw"]),
                     "alpha_kappa": float(diagnostics["alpha_kappa"]),
+                    "effective_alpha": float(diagnostics["effective_alpha"]),
+                    "residual_input_dim": int(diagnostics["residual_input"].shape[1]),
+                    "residual_input_feature_names": "|".join(actor_config["input_feature_names"]),
                     "q_base_mean": float(np.mean(q_base)), "q_base_std": float(np.std(q_base)),
                     "q_base_min": float(np.min(q_base)), "q_base_max": float(np.max(q_base)),
                     "residual_delta_mean": float(np.mean(delta)), "residual_delta_std": float(np.std(delta)),

@@ -1,27 +1,30 @@
 # 功能：在精调启发式使用的物理信道下训练 Stage-2 NN，同时保留 distributed AF3、
 # 相同随机种子与训练超参数，用于隔离信道配置对 VAoI 的影响。
 experiment:
-  id: nn_2layers_stage2_heuristic_channel_n100_u0.20_b0.15_a1.50_v2
+  id: nn_2layers_stage2_heuristic_channel_n100_cross4to5_u0.20_b0.15_a1.0
   master_seed: 20260723
-  slots: 500
+  # 验证场景的每次仿真时长；训练时长由 training.rollout_slots 单独控制。
+  slots: &evaluation_slots 500
 topology:
   type: soft_two_community
   params:
-    n_nodes: 100
+    # 默认网络规模；训练和验证场景均引用此值。
+    n_nodes: &n_nodes 100
     cluster_sizes: [50, 50]
     area_width_m: 400.0
     area_height_m: 300.0
     communication_radius_m: 40.0
     center_separation_m: 160.0
     cluster_radius_m: 80.0
-    cross_edge_count_range: [2, 4]
+    cross_edge_count_range: [4, 5]
     min_cross_endpoints_per_cluster: 2
     min_degree: 3
     require_induced_cluster_connected: true
     min_edge_connectivity: 2
     max_attempts: 2000
 source:
-  update_probability: 0.20
+  # 默认源更新概率；训练和验证场景均引用此值。
+  update_probability: &update_probability 0.20
 channel:
   # 与 test_vaoi_vs_transmissions_u0.2 的精调启发式物理信道保持一致。
   tx_power_dbm: 20.0
@@ -40,7 +43,8 @@ curvature:
   method: distributed_af3
   normalization: local_degree_bound
 constraints:
-  target_tx_ratio: 0.15
+  # 默认发送预算；训练和验证场景均引用此值。
+  target_tx_ratio: &target_tx_ratio 0.15
   per_node_cap_multiplier: 1.5
 actor:
   stage: 2
@@ -48,8 +52,8 @@ actor:
     score: incident_bottleneck_max
     center: auto
     alpha_parameterization: softplus
-    alpha_init: 1.5
-    alpha_override: 1.5
+    alpha_init: 1.0
+    alpha_override: 1.0
   residual:
     enabled: true
     hidden_dims: [64, 64]
@@ -70,11 +74,12 @@ observation:
 training:
   # 首轮保持 200 episodes，确保与当前结果构成单变量对照。
   episodes: 300
+  # 训练 rollout 长度；故意与验证场景的 500 slots 不同。
   rollout_slots: 400
   topology_seed_start: 40000
-  target_tx_ratios: [0.15]
-  node_counts: [100]
-  update_probabilities: [0.20]
+  target_tx_ratios: [*target_tx_ratio]
+  node_counts: [*n_nodes]
+  update_probabilities: [*update_probability]
   learning_rate: 0.0003
   clip_ratio: 0.2
   entropy_coefficient: 0.0
@@ -98,16 +103,16 @@ validation:
   every_episodes: 10
   checkpoint_mode: validation_best_only
   scenarios:
-    - {id: v00, topology_seed: 51000, source_update_seed: 61000, channel_shadowing_seed: 71000, channel_fading_seed: 81000, policy_action_seed: 91000, slots: 500, n_nodes: 100, update_probability: 0.20, target_tx_ratio: 0.15}
-    - {id: v01, topology_seed: 51001, source_update_seed: 61001, channel_shadowing_seed: 71001, channel_fading_seed: 81001, policy_action_seed: 91001, slots: 500, n_nodes: 100, update_probability: 0.20, target_tx_ratio: 0.15}
-    - {id: v02, topology_seed: 51002, source_update_seed: 61002, channel_shadowing_seed: 71002, channel_fading_seed: 81002, policy_action_seed: 91002, slots: 500, n_nodes: 100, update_probability: 0.20, target_tx_ratio: 0.15}
-    - {id: v03, topology_seed: 51003, source_update_seed: 61003, channel_shadowing_seed: 71003, channel_fading_seed: 81003, policy_action_seed: 91003, slots: 500, n_nodes: 100, update_probability: 0.20, target_tx_ratio: 0.15}
-    - {id: v04, topology_seed: 51004, source_update_seed: 61004, channel_shadowing_seed: 71004, channel_fading_seed: 81004, policy_action_seed: 91004, slots: 500, n_nodes: 100, update_probability: 0.20, target_tx_ratio: 0.15}
-    - {id: v05, topology_seed: 51005, source_update_seed: 61005, channel_shadowing_seed: 71005, channel_fading_seed: 81005, policy_action_seed: 91005, slots: 500, n_nodes: 100, update_probability: 0.20, target_tx_ratio: 0.15}
-    - {id: v06, topology_seed: 51006, source_update_seed: 61006, channel_shadowing_seed: 71006, channel_fading_seed: 81006, policy_action_seed: 91006, slots: 500, n_nodes: 100, update_probability: 0.20, target_tx_ratio: 0.15}
-    - {id: v07, topology_seed: 51007, source_update_seed: 61007, channel_shadowing_seed: 71007, channel_fading_seed: 81007, policy_action_seed: 91007, slots: 500, n_nodes: 100, update_probability: 0.20, target_tx_ratio: 0.15}
-    - {id: v08, topology_seed: 51008, source_update_seed: 61008, channel_shadowing_seed: 71008, channel_fading_seed: 81008, policy_action_seed: 91008, slots: 500, n_nodes: 100, update_probability: 0.20, target_tx_ratio: 0.15}
-    - {id: v09, topology_seed: 51009, source_update_seed: 61009, channel_shadowing_seed: 71009, channel_fading_seed: 81009, policy_action_seed: 91009, slots: 500, n_nodes: 100, update_probability: 0.20, target_tx_ratio: 0.15}
+    - {id: v00, topology_seed: 51000, source_update_seed: 61000, channel_shadowing_seed: 71000, channel_fading_seed: 81000, policy_action_seed: 91000, slots: *evaluation_slots, n_nodes: *n_nodes, update_probability: *update_probability, target_tx_ratio: *target_tx_ratio}
+    - {id: v01, topology_seed: 51001, source_update_seed: 61001, channel_shadowing_seed: 71001, channel_fading_seed: 81001, policy_action_seed: 91001, slots: *evaluation_slots, n_nodes: *n_nodes, update_probability: *update_probability, target_tx_ratio: *target_tx_ratio}
+    - {id: v02, topology_seed: 51002, source_update_seed: 61002, channel_shadowing_seed: 71002, channel_fading_seed: 81002, policy_action_seed: 91002, slots: *evaluation_slots, n_nodes: *n_nodes, update_probability: *update_probability, target_tx_ratio: *target_tx_ratio}
+    - {id: v03, topology_seed: 51003, source_update_seed: 61003, channel_shadowing_seed: 71003, channel_fading_seed: 81003, policy_action_seed: 91003, slots: *evaluation_slots, n_nodes: *n_nodes, update_probability: *update_probability, target_tx_ratio: *target_tx_ratio}
+    - {id: v04, topology_seed: 51004, source_update_seed: 61004, channel_shadowing_seed: 71004, channel_fading_seed: 81004, policy_action_seed: 91004, slots: *evaluation_slots, n_nodes: *n_nodes, update_probability: *update_probability, target_tx_ratio: *target_tx_ratio}
+    - {id: v05, topology_seed: 51005, source_update_seed: 61005, channel_shadowing_seed: 71005, channel_fading_seed: 81005, policy_action_seed: 91005, slots: *evaluation_slots, n_nodes: *n_nodes, update_probability: *update_probability, target_tx_ratio: *target_tx_ratio}
+    - {id: v06, topology_seed: 51006, source_update_seed: 61006, channel_shadowing_seed: 71006, channel_fading_seed: 81006, policy_action_seed: 91006, slots: *evaluation_slots, n_nodes: *n_nodes, update_probability: *update_probability, target_tx_ratio: *target_tx_ratio}
+    - {id: v07, topology_seed: 51007, source_update_seed: 61007, channel_shadowing_seed: 71007, channel_fading_seed: 81007, policy_action_seed: 91007, slots: *evaluation_slots, n_nodes: *n_nodes, update_probability: *update_probability, target_tx_ratio: *target_tx_ratio}
+    - {id: v08, topology_seed: 51008, source_update_seed: 61008, channel_shadowing_seed: 71008, channel_fading_seed: 81008, policy_action_seed: 91008, slots: *evaluation_slots, n_nodes: *n_nodes, update_probability: *update_probability, target_tx_ratio: *target_tx_ratio}
+    - {id: v09, topology_seed: 51009, source_update_seed: 61009, channel_shadowing_seed: 71009, channel_fading_seed: 81009, policy_action_seed: 91009, slots: *evaluation_slots, n_nodes: *n_nodes, update_probability: *update_probability, target_tx_ratio: *target_tx_ratio}
 output:
   root: result_2layers
   save_per_slot: false

@@ -158,6 +158,16 @@ the supplied training smoke run:
 conda run --no-capture-output -n GRL_AoI_cpu37 python -m curvature_gossip.cli run --config configs/nn_2layers_stage1_eval_smoke.yaml
 ```
 
+## Stage-2 配置维护
+
+`configs/nn_2layers_stage2_heuristic_channel.yaml` 使用 YAML 锚点统一维护默认
+实验条件：`n_nodes`、`update_probability`、`target_tx_ratio` 和验证时长。
+训练列表和每个固定验证场景都引用这些锚点，因此修改默认值会同步生效，避免遗漏。
+其中 `training.rollout_slots=400` 是训练长度，验证场景使用
+`experiment.slots=500`；两者有意独立，若需统一可将前者改为
+`rollout_slots: *evaluation_slots`。修改网络规模后，仍须手动检查默认
+`topology.params.cluster_sizes` 是否与节点数相符。
+
 ## 启发式物理信道下的固定 alpha 对照（2026-07-28）
 
 `configs/nn_2layers_stage1_fixed_alpha_heuristic_channel.yaml` 用于关闭 Stage-2 residual 后，在当前启发式物理信道（无 shadowing/fading）下评估固定 Stage-1 alpha。已完成 `u=0.05/0.10/0.20`、`b=0.10`、`alpha=0.5/1.0/1.2/1.5/1.8` 的配对验证；完整结果及与 Stage-2 最佳验证 checkpoint 的比较见 `result_2layers/fixed_alpha_grid_heuristic_channel_b0.10/comparison_report.md`。

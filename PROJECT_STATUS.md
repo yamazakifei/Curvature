@@ -39,6 +39,30 @@ contains eight non-curvature local features and explicitly appends one
 detached Stage-1 probability reference, yielding a nine-dimensional MLP
 input.  The Stage-2 smoke configuration fixes the grid-search-selected
 curvature alpha at 1.5 and trains only the residual MLP.
+The formal curvature Stage-2 YAML now uses anchors and aliases to keep its
+training and fixed-validation values for slots, node count, update rate, and
+target rate synchronized.
+
+## Strict no-curvature Stage-2 ablation (2026-07-29)
+
+`configs/nn_2layers_stage2_no_curvature.yaml` is the formal ablation paired
+with the heuristic-channel Stage-2 setup: it shares its `b=0.15`, physical
+channel, 300-episode/400-slot training schedule, and ten fixed validation
+scenarios. It uses YAML anchors and aliases for the common evaluation slots,
+node count, update probability, and target rate. Its smoke counterpart is
+`configs/nn_2layers_stage2_no_curvature_smoke.yaml`.  This is not merely
+`alpha_override: 0`: it sets that override to zero and removes the detached
+Stage-1 probability from the residual MLP, leaving the eight non-curvature
+dynamic context features as its only input.  Checkpoint metadata records
+`no_curvature_stage2_residual_v1`, and diagnostics record the effective alpha,
+reference flag, and residual input feature list so the ablation is auditable.
+
+Run the smoke experiment with:
+
+```powershell
+cd D:\ZMF\2026Curvature\curvature-gossip
+conda run --no-capture-output -n GRL_AoI_cpu37 python scripts/train_nn_ctde.py --config configs/nn_2layers_stage2_no_curvature_smoke.yaml
+```
 
 ## Stage 2 heuristic-channel controlled experiment
 

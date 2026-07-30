@@ -1,0 +1,45 @@
+experiment:
+  id: stage0_test
+  master_seed: 7
+  slots: 12
+  topology_seeds:
+  - 0
+  channel_seeds:
+  - 0
+  update_seeds:
+  - 0
+topology:
+  type: random_geometric
+  params:
+    n_nodes: 12
+    area_width_m: 100.0
+    area_height_m: 100.0
+    communication_radius_m: 75.0
+    min_degree: 2
+    max_attempts: 1000
+source:
+  update_probability: 0.05
+channel:
+  rayleigh_fading: false
+  shadowing_std_db: 0.0
+  sinr_threshold_db: 3.0
+curvature:
+  method: distributed_af3
+  normalization: local_degree_bound
+constraints:
+  target_tx_ratio: 0.1
+  per_node_cap_multiplier: 1.5
+policies:
+- name: curvature_fixed_alpha
+  type: curvature_fixed_alpha
+  params:
+    target_tx_ratio: 0.1
+    alpha: 1.0
+- name: matched_rate_random
+  type: matched_rate_random
+  params:
+    reference_policy: curvature_fixed_alpha
+output:
+  root: D:\ZMF\2026Curvature\curvature-gossip\.pytest_full_tmp\test_matched_rate_random_uses_0\results
+  save_per_slot: false
+  make_plots: false
