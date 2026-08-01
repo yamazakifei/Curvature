@@ -1,8 +1,7 @@
 """Implement legacy, Stage-1, and hierarchical Stage-2 CTDE PPO actors.
 
-Stage 1 owns only a shared curvature alpha.  Stage 2 adds a local-context
-residual MLP, with an explicit no-curvature ablation that omits the Stage-1
-probability reference.
+Stage 1 owns only a shared curvature alpha.  Stage 2 supports its original
+local-context residual MLP and a strictly local edge-message MPNN residual.
 The centralized critic remains training-only for every actor architecture.
 """
 
@@ -14,13 +13,40 @@ import numpy as np
 from .features import GLOBAL_STATE_DIM, NODE_FEATURE_DIM
 
 
+def resolve_learning_rates(training_config: Mapping, default: float = 3e-4):
+    """Resolve backward-compatible Actor and Critic learning rates from YAML."""
+    training = dict(training_config or {})
+    shared_learning_rate = float(training.get("learning_rate", default))
+    actor_learning_rate = float(training.get("actor_learning_rate", shared_learning_rate))
+    critic_learning_rate = float(training.get("critic_learning_rate", shared_learning_rate))
+    for name, value in (("learning_rate", shared_learning_rate),
+                        ("actor_learning_rate", actor_learning_rate),
+                        ("critic_learning_rate", critic_learning_rate)):
+        if not np.isfinite(value) or value <= 0.0:
+            raise ValueError("training.{} must be finite and positive".format(name))
+    return actor_learning_rate, critic_learning_rate
+
+
 class CTDEPPO:
     """PPO model whose actor architecture is selected explicitly by ``actor.stage``."""
 
     def __init__(self, learning_rate=3e-4, clip_ratio=0.2, entropy_coefficient=0.01,
-                 seed=0, session_config=None, actor_config=None) -> None:
+                 seed=0, session_config=None, actor_config=None,
+                 actor_learning_rate=None, critic_learning_rate=None) -> None:
         import tensorflow as tensorflow
 
+        # Keep the original shared argument while allowing either optimizer to override it.
+        shared_learning_rate = float(learning_rate)
+        self.actor_learning_rate = (
+            shared_learning_rate if actor_learning_rate is None else float(actor_learning_rate)
+        )
+        self.critic_learning_rate = (
+            shared_learning_rate if critic_learning_rate is None else float(critic_learning_rate)
+        )
+        for name, value in (("actor_learning_rate", self.actor_learning_rate),
+                            ("critic_learning_rate", self.critic_learning_rate)):
+            if not np.isfinite(value) or value <= 0.0:
+                raise ValueError("{} must be finite and positive".format(name))
         self.actor_config = dict(actor_config or {})
         self.actor_stage = int(self.actor_config.get("stage", 0))
         if self.actor_stage not in (0, 1, 2):
@@ -30,7 +56,10 @@ class CTDEPPO:
         self.graph = self.tf.Graph()
         with self.graph.as_default():
             self.tf.set_random_seed(int(seed))
-            self._build_graph(float(learning_rate), float(clip_ratio), float(entropy_coefficient))
+            self._build_graph(
+                self.actor_learning_rate, self.critic_learning_rate,
+                float(clip_ratio), float(entropy_coefficient),
+            )
             self.saver = self.tf.train.Saver(max_to_keep=None)
             self.init_op = self.tf.global_variables_initializer()
         self.session = self.tf.Session(graph=self.graph, config=session_config)
@@ -80,6 +109,9 @@ class CTDEPPO:
                 return
 
             residual = dict(self.actor_config.get("residual", {}))
+            self.residual_architecture = str(residual.get("architecture", "mlp"))
+            if self.residual_architecture not in ("mlp", "mpnn"):
+                raise ValueError("Stage 2 residual.architecture must be 'mlp' or 'mpnn'")
             context_width = 11 if bool(residual.get("include_scenario_context", False)) else 8
             hidden_dims = list(residual.get("hidden_dims", [64, 64]))
             if hidden_dims != [64, 64]:
@@ -87,6 +119,10 @@ class CTDEPPO:
             delta_max = float(residual.get("delta_max", 1.0))
             if not np.isfinite(delta_max) or delta_max <= 0.0:
                 raise ValueError("Stage 2 residual.delta_max must be finite and positive")
+            if self.residual_architecture == "mpnn":
+                self._build_mpnn_residual(residual)
+                return
+
             self.residual_context = tf.placeholder(tf.float32, [None, context_width], name="residual_context")
             use_stage1_reference = bool(residual.get("use_stage1_reference", True))
             if use_stage1_reference:
@@ -126,8 +162,65 @@ class CTDEPPO:
         self.alpha_override_active = False
         self.base_logits = self.base_probabilities = self.residual_delta = self.residual_input = None
         self.effective_alpha = None
+        self.residual_architecture = None
 
-    def _build_graph(self, learning_rate, clip_ratio, entropy_coefficient):
+    def _build_mpnn_residual(self, residual):
+        """Build the receiver-conditioned one-hop MPNN with vectorized segment aggregation."""
+        tf = self.tf
+        node_width = 8 if bool(residual.get("include_scenario_context", False)) else 5
+        mpnn = dict(residual.get("mpnn", {}))
+        if (list(mpnn.get("message_hidden_dims", [32])) != [32]
+                or int(mpnn.get("message_dim", 16)) != 16
+                or list(mpnn.get("update_hidden_dims", [64, 64])) != [64, 64]
+                or mpnn.get("aggregation", "mean_max") != "mean_max"
+                or not bool(mpnn.get("condition_message_on_receiver", True))
+                or bool(mpnn.get("use_sender_node_features", False))
+                or bool(mpnn.get("use_curvature_edge_feature", False))):
+            raise ValueError("Stage 2 MPNN must use the fixed receiver-conditioned mean_max architecture")
+        delta_max = float(residual.get("delta_max", 1.0))
+        if not np.isfinite(delta_max) or delta_max <= 0.0:
+            raise ValueError("Stage 2 residual.delta_max must be finite and positive")
+        self.mpnn_node_context = tf.placeholder(tf.float32, [None, node_width], name="mpnn_node_context")
+        self.mpnn_edge_features = tf.placeholder(tf.float32, [None, 3], name="mpnn_edge_features")
+        self.mpnn_edge_receivers = tf.placeholder(tf.int32, [None], name="mpnn_edge_receivers")
+        receiver_context = tf.gather(self.mpnn_node_context, self.mpnn_edge_receivers)
+        message_input = tf.concat([receiver_context, self.mpnn_edge_features], axis=1, name="message_input")
+        with tf.variable_scope("actor/residual_mpnn/message_mlp"):
+            message_hidden = tf.layers.dense(message_input, 32, activation=tf.nn.relu, name="dense_1")
+            edge_messages = tf.layers.dense(message_hidden, 16, activation=tf.nn.relu, name="dense_2")
+        node_count = tf.shape(self.mpnn_node_context)[0]
+        message_sum = tf.math.unsorted_segment_sum(edge_messages, self.mpnn_edge_receivers, node_count)
+        edge_count = tf.math.unsorted_segment_sum(
+            tf.ones_like(self.mpnn_edge_receivers, dtype=tf.float32), self.mpnn_edge_receivers, node_count
+        )
+        mean_message = message_sum / tf.maximum(tf.expand_dims(edge_count, 1), 1.0)
+        max_message = tf.math.unsorted_segment_max(edge_messages, self.mpnn_edge_receivers, node_count)
+        # TensorFlow 1.x Select does not broadcast the [N, 1] edge mask.
+        has_edges = tf.tile(tf.expand_dims(edge_count > 0.0, 1), [1, 16])
+        max_message = tf.where(has_edges, max_message, tf.zeros_like(max_message))
+        self.mpnn_edge_messages = tf.identity(edge_messages, name="edge_messages")
+        self.mpnn_aggregated_messages = tf.identity(
+            tf.concat([mean_message, max_message], axis=1), name="aggregated_messages"
+        )
+        use_stage1_reference = bool(residual.get("use_stage1_reference", True))
+        decoder_parts = [self.mpnn_node_context, self.mpnn_aggregated_messages]
+        if use_stage1_reference:
+            decoder_parts.append(tf.stop_gradient(
+                tf.expand_dims(self.base_probabilities, axis=1), name="detached_stage1_reference"
+            ))
+        self.residual_input = tf.concat(decoder_parts, axis=1, name="residual_input")
+        with tf.variable_scope("actor/residual_mpnn/update_mlp"):
+            hidden = tf.layers.dense(self.residual_input, 64, activation=tf.nn.relu, name="dense_1")
+            hidden = tf.layers.dense(hidden, 64, activation=tf.nn.relu, name="dense_2")
+            residual_raw = tf.squeeze(tf.layers.dense(
+                hidden, 1, kernel_initializer=tf.zeros_initializer(), bias_initializer=tf.zeros_initializer(),
+                name="delta_logit",
+            ), axis=1)
+        self.residual_delta = tf.identity(delta_max * tf.tanh(residual_raw), name="residual_delta")
+        self.logits = tf.identity(self.base_logits + self.residual_delta, name="final_logits")
+        self.probabilities = tf.nn.sigmoid(self.logits, name="transmission_probability")
+
+    def _build_graph(self, actor_learning_rate, critic_learning_rate, clip_ratio, entropy_coefficient):
         tf = self.tf
         self.actions = tf.placeholder(tf.float32, [None], name="actions")
         self.old_log_probabilities = tf.placeholder(tf.float32, [None], name="old_log_probabilities")
@@ -164,12 +257,16 @@ class CTDEPPO:
             ]
         else:
             actor_update_variables = actor_variables
-        self.actor_train_op = (tf.train.AdamOptimizer(learning_rate).minimize(self.actor_loss, var_list=actor_update_variables)
+        self.actor_train_op = (tf.train.AdamOptimizer(actor_learning_rate).minimize(self.actor_loss, var_list=actor_update_variables)
                                if actor_update_variables else tf.no_op())
-        self.critic_train_op = tf.train.AdamOptimizer(learning_rate).minimize(self.critic_loss, var_list=critic_variables)
+        self.critic_train_op = tf.train.AdamOptimizer(critic_learning_rate).minimize(self.critic_loss, var_list=critic_variables)
 
     def _encoded_feed(self, encoded):
         if self.actor_stage == 2:
+            if self.residual_architecture == "mpnn":
+                return {self.curvature_scores: encoded.curvature_scores, self.target_tx_ratios: encoded.target_tx_ratios,
+                        self.mpnn_node_context: encoded.node_context, self.mpnn_edge_features: encoded.edge_features,
+                        self.mpnn_edge_receivers: encoded.edge_index[1]}
             return {self.curvature_scores: encoded.curvature_scores, self.target_tx_ratios: encoded.target_tx_ratios,
                     self.residual_context: encoded.residual_context}
         if self.actor_stage == 1:
@@ -178,6 +275,15 @@ class CTDEPPO:
 
     def actor_batch_inputs(self, encoded_steps):
         if self.actor_stage == 2:
+            if self.residual_architecture == "mpnn":
+                node_counts = [item.node_context.shape[0] for item in encoded_steps]
+                offsets = np.cumsum([0] + node_counts[:-1]).astype(np.int32)
+                edge_indices = [item.edge_index + offset for item, offset in zip(encoded_steps, offsets)]
+                return {"curvature_scores": np.concatenate([item.curvature_scores for item in encoded_steps]),
+                        "target_tx_ratios": np.concatenate([item.target_tx_ratios for item in encoded_steps]),
+                        "node_context": np.concatenate([item.node_context for item in encoded_steps]),
+                        "edge_index": np.concatenate(edge_indices, axis=1).astype(np.int32, copy=False),
+                        "edge_features": np.concatenate([item.edge_features for item in encoded_steps]).astype(np.float32, copy=False)}
             return {"curvature_scores": np.concatenate([item.curvature_scores for item in encoded_steps]),
                     "target_tx_ratios": np.concatenate([item.target_tx_ratios for item in encoded_steps]),
                     "residual_context": np.concatenate([item.residual_context for item in encoded_steps])}
@@ -188,6 +294,10 @@ class CTDEPPO:
 
     def _actor_batch_feed(self, batch):
         if self.actor_stage == 2:
+            if self.residual_architecture == "mpnn":
+                return {self.curvature_scores: batch["curvature_scores"], self.target_tx_ratios: batch["target_tx_ratios"],
+                        self.mpnn_node_context: batch["node_context"], self.mpnn_edge_features: batch["edge_features"],
+                        self.mpnn_edge_receivers: batch["edge_index"][1]}
             return {self.curvature_scores: batch["curvature_scores"], self.target_tx_ratios: batch["target_tx_ratios"],
                     self.residual_context: batch["residual_context"]}
         if self.actor_stage == 1:
@@ -196,6 +306,13 @@ class CTDEPPO:
 
     def predict_probabilities(self, encoded):
         return self.session.run(self.probabilities, feed_dict=self._encoded_feed(encoded))
+
+    def predict_stage1_probabilities(self, encoded):
+        """Return the frozen curvature-base probabilities for paired Stage-1-only validation."""
+        if self.actor_stage not in (1, 2):
+            raise ValueError("Stage-1-only probabilities require a Stage 1 or Stage 2 actor")
+        probabilities = self.base_probabilities if self.actor_stage == 2 else self.probabilities
+        return self.session.run(probabilities, feed_dict=self._encoded_feed(encoded))
 
     def act(self, encoded, rng):
         probabilities = self.predict_probabilities(encoded)
@@ -246,6 +363,11 @@ class CTDEPPO:
             "q_base": self.base_probabilities, "delta": self.residual_delta,
             "q_final": self.probabilities, "residual_input": self.residual_input,
         }, feed_dict=self._encoded_feed(encoded))
+        if self.residual_architecture == "mpnn":
+            values.update(self.session.run({
+                "edge_messages": self.mpnn_edge_messages,
+                "aggregated_messages": self.mpnn_aggregated_messages,
+            }, feed_dict=self._encoded_feed(encoded)))
         return {key: np.asarray(value) for key, value in values.items()}
 
     def variable_snapshot(self):

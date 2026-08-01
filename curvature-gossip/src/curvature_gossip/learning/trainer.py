@@ -21,10 +21,11 @@ from ..policies.random_policy import UniformRandomPolicy
 from ..random_streams import make_rng
 from ..simulator import GossipSimulator, SimulationParameters
 from ..topology import get_topology_generator
-from .ctde_ppo import CTDEPPO
+from .ctde_ppo import CTDEPPO, resolve_learning_rates
 from .features import (
     encode_curvature_score, encode_global_state, encode_observations,
-    encode_stage1_observations, encode_stage2_observations, stage2_context_feature_names,
+    encode_stage1_observations, encode_stage2_observations, encode_stage2_mpnn_observations,
+    stage2_context_feature_names, STAGE2_MPNN_NODE_FEATURE_NAMES, STAGE2_MPNN_EDGE_FEATURE_NAMES,
 )
 from .validation import evaluate_fixed_validation, probability_statistics, validation_scenarios
 
@@ -153,10 +154,16 @@ def _write_csv_history(path: Path, rows) -> None:
     """Persist a validation CSV with stable columns after every fixed-set evaluation."""
     if not rows:
         return
+    def format_value(value):
+        """Keep validation CSV values compact without changing in-memory precision."""
+        if isinstance(value, (float, np.floating)) and np.isfinite(value):
+            return "{:.5f}".format(float(value))
+        return value
     with path.open("w", newline="", encoding="utf-8") as stream:
         writer = csv.DictWriter(stream, fieldnames=list(rows[0].keys()))
         writer.writeheader()
-        writer.writerows(rows)
+        for row in rows:
+            writer.writerow({key: format_value(value) for key, value in row.items()})
 
 
 def _save_checkpoint(model: CTDEPPO, output_directory: Path, name: str, episode: int, config_path: str, actor_metadata=None) -> str:
@@ -195,6 +202,9 @@ def _stage1_actor_config(raw: Mapping) -> Mapping:
         return actor
     if not bool(residual.get("enabled", False)):
         raise ValueError("Stage 2 requires residual.enabled=true")
+    architecture = str(residual.get("architecture", "mlp"))
+    if architecture not in ("mlp", "mpnn"):
+        raise ValueError("Stage 2 residual.architecture must be 'mlp' or 'mpnn'")
     if list(residual.get("hidden_dims", [64, 64])) != [64, 64]:
         raise ValueError("Stage 2 requires residual.hidden_dims=[64, 64]")
     if residual.get("activation", "relu") != "relu" or not bool(residual.get("zero_init_output", True)):
@@ -210,7 +220,33 @@ def _stage1_actor_config(raw: Mapping) -> Mapping:
             raise ValueError("Stage-2 without a Stage-1 reference requires actor.curvature.alpha_override=0.0")
     residual.setdefault("delta_max", 1.0)
     residual.setdefault("freeze_stage1", False)
+    residual["architecture"] = architecture
     actor["residual"] = residual
+    if architecture == "mpnn":
+        mpnn = dict(residual.get("mpnn", {}))
+        required = {
+            "message_hidden_dims": [32], "message_dim": 16, "update_hidden_dims": [64, 64],
+            "aggregation": "mean_max", "condition_message_on_receiver": True,
+            "use_sender_node_features": False, "use_curvature_edge_feature": False,
+        }
+        for key, expected in required.items():
+            if mpnn.get(key, expected) != expected:
+                raise ValueError("Stage 2 MPNN requires mpnn.{}={!r}".format(key, expected))
+        residual["mpnn"] = dict(required)
+        node_features = list(STAGE2_MPNN_NODE_FEATURE_NAMES)
+        if bool(residual.get("include_scenario_context", False)):
+            node_features += ["log_network_size", "update_probability", "target_tx_ratio"]
+        actor.update({
+            "architecture_version": "curvature_stage2_mpnn_v1" if use_stage1_reference else "no_curvature_stage2_mpnn_v1",
+            "residual_architecture": "mpnn", "node_input_feature_names": node_features,
+            "edge_input_feature_names": list(STAGE2_MPNN_EDGE_FEATURE_NAMES),
+            "node_input_dim": len(node_features), "edge_input_dim": 3, "message_input_dim": len(node_features) + 3,
+            "message_dim": 16, "aggregation": "mean_max", "aggregated_message_dim": 32,
+            "decoder_input_dim": len(node_features) + 32 + (1 if use_stage1_reference else 0),
+            "condition_message_on_receiver": True, "use_sender_node_features": False,
+            "use_curvature_edge_feature": False, "input_feature_names": node_features,
+        })
+        return actor
     context_features = list(stage2_context_feature_names(
         bool(residual.get("include_scenario_context", False))
     ))
@@ -222,6 +258,7 @@ def _stage1_actor_config(raw: Mapping) -> Mapping:
         context_features + ["detached_stage1_probability"]
         if use_stage1_reference else context_features
     )
+    actor["residual_architecture"] = "mlp"
     return actor
 
 
@@ -278,6 +315,7 @@ def train_ctde(config_path: str):
     congestion_feature_scale = float(raw.get("observation", {}).get("congestion_feature_scale", 5.0))
     initial_multiplier = float(training.get("initial_multiplier", 0.0))
     multiplier_learning_rate = float(training.get("multiplier_learning_rate", 0.01))
+    actor_learning_rate, critic_learning_rate = resolve_learning_rates(training)
     multiplier_max = float(training.get("multiplier_max", 0.15))
     tx_ratio_ema_beta = float(training.get("tx_ratio_ema_beta", 0.9))
     relative_tolerance = float(training.get("budget_relative_tolerance", 0.05))
@@ -310,7 +348,14 @@ def train_ctde(config_path: str):
         validation_scenarios(raw)
 
     seed = int(raw["experiment"].get("master_seed", 0))
-    model = CTDEPPO(learning_rate=float(training.get("learning_rate", 3e-4)), clip_ratio=float(training.get("clip_ratio", 0.2)), entropy_coefficient=float(training.get("entropy_coefficient", 0.01)), seed=seed, actor_config=actor_config)
+    model = CTDEPPO(
+        learning_rate=float(training.get("learning_rate", 3e-4)),
+        actor_learning_rate=actor_learning_rate,
+        critic_learning_rate=critic_learning_rate,
+        clip_ratio=float(training.get("clip_ratio", 0.2)),
+        entropy_coefficient=float(training.get("entropy_coefficient", 0.01)),
+        seed=seed, actor_config=actor_config,
+    )
     initial_checkpoint = training.get("initial_checkpoint")
     restored_variables = ()
     if initial_checkpoint:
@@ -379,11 +424,12 @@ def train_ctde(config_path: str):
                 if model.actor_stage == 1:
                     encoded = encode_stage1_observations(observations, target)
                 elif model.actor_stage == 2:
-                    encoded = encode_stage2_observations(
-                        observations, target, simulator.parameters.update_probability,
-                        consecutive_tx_scale, confidence_time_constant, congestion_feature_scale,
-                        bool(actor_config["residual"].get("include_scenario_context", False)),
-                    )
+                    encoder = (encode_stage2_mpnn_observations
+                               if actor_config["residual"].get("architecture", "mlp") == "mpnn"
+                               else encode_stage2_observations)
+                    encoded = encoder(observations, target, simulator.parameters.update_probability,
+                                      consecutive_tx_scale, confidence_time_constant, congestion_feature_scale,
+                                      bool(actor_config["residual"].get("include_scenario_context", False)))
                 else:
                     encoded = encode_observations(
                         observations, target, simulator.parameters.update_probability,
@@ -490,6 +536,23 @@ def train_ctde(config_path: str):
                     "q_final_std": float(np.std(probability_steps)),
                     "corr_s_kappa_q_base": float(np.corrcoef(scores, q_base)[0, 1]) if np.std(scores) > 0.0 else 0.0,
                 })
+                if actor_config["residual"].get("architecture", "mlp") == "mpnn":
+                    edge_features = np.concatenate([step.edge_features for step in encoded_steps], axis=0)
+                    edge_count = int(edge_features.shape[0])
+                    message = np.concatenate([model.stage2_diagnostics(step)["edge_messages"] for step in encoded_steps], axis=0)
+                    aggregated = np.concatenate([model.stage2_diagnostics(step)["aggregated_messages"] for step in encoded_steps], axis=0)
+                    row.update({
+                        "residual_architecture": "mpnn", "node_input_dim": actor_config["node_input_dim"],
+                        "edge_input_dim": actor_config["edge_input_dim"], "message_dim": actor_config["message_dim"],
+                        "aggregation": actor_config["aggregation"], "aggregated_message_dim": actor_config["aggregated_message_dim"],
+                        "decoder_input_dim": actor_config["decoder_input_dim"], "directed_edge_count": edge_count,
+                        "mean_directed_degree": float(edge_count) / simulator.state.n_nodes,
+                        "valid_edge_fraction": float(np.mean(edge_features[:, 0])) if edge_count else 0.0,
+                        "message_l2_mean": float(np.mean(np.linalg.norm(message, axis=1))) if edge_count else 0.0,
+                        "message_l2_std": float(np.std(np.linalg.norm(message, axis=1))) if edge_count else 0.0,
+                        "aggregated_message_l2_mean": float(np.mean(np.linalg.norm(aggregated, axis=1))),
+                        "aggregated_message_l2_std": float(np.std(np.linalg.norm(aggregated, axis=1))),
+                    })
             row.update(probability_statistics(probability_steps))
             if not all(np.isfinite(value) for value in row.values() if isinstance(value, (float, np.floating))):
                 raise FloatingPointError("V3 training diagnostics must be finite")
@@ -530,11 +593,12 @@ def train_ctde(config_path: str):
     metadata = {
         "checkpoint": str(selected_checkpoint), "episodes": len(history),
         "target_tx_ratios": targets, "node_counts": node_counts, "update_probabilities": update_probabilities,
-        "model_version": ("curvature_stage2_residual" if model.actor_stage == 2 else
+        "model_version": (actor_config.get("architecture_version", "curvature_stage2_residual") if model.actor_stage == 2 else
                           "curvature_stage1_single_alpha" if model.actor_stage == 1 else
                           "node_only_freshness_lagrangian_v3"),
         "actor": _json_safe(actor_config), "initial_checkpoint": initial_checkpoint,
         "restored_variables": list(restored_variables), "vaoi_reward_scale": vaoi_reward_scale,
+        "actor_learning_rate": actor_learning_rate, "critic_learning_rate": critic_learning_rate,
         "consecutive_tx_scale": consecutive_tx_scale, "neighbor_confidence_time_constant": confidence_time_constant,
         "initial_multiplier": initial_multiplier, "multiplier_learning_rate": multiplier_learning_rate,
         "multiplier_max": multiplier_max, "tx_ratio_ema_beta": tx_ratio_ema_beta,

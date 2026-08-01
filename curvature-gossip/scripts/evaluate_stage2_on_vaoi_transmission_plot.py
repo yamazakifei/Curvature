@@ -26,7 +26,7 @@ if str(SRC_ROOT) not in sys.path:
 from curvature_gossip.channel import ChannelParameters, PropagationModel
 from curvature_gossip.curvature import bottleneck_importance
 from curvature_gossip.experiments.runner import _curvature_provider
-from curvature_gossip.learning.ctde_ppo import CTDEPPO
+from curvature_gossip.learning.ctde_ppo import CTDEPPO, resolve_learning_rates
 from curvature_gossip.learning.features import encode_stage2_observations
 from curvature_gossip.random_streams import make_rng
 from curvature_gossip.simulator import GossipSimulator, SimulationParameters
@@ -199,8 +199,11 @@ def main():
     channel_seed = int(sweep_raw["experiment"]["channel_seeds"][0])
     update_seed = int(sweep_raw["experiment"]["update_seeds"][0])
     actor = model_raw["actor"]
+    actor_learning_rate, critic_learning_rate = resolve_learning_rates(model_raw.get("training", {}))
     model = CTDEPPO(
         learning_rate=float(model_raw.get("training", {}).get("learning_rate", 3e-4)),
+        actor_learning_rate=actor_learning_rate,
+        critic_learning_rate=critic_learning_rate,
         clip_ratio=float(model_raw.get("training", {}).get("clip_ratio", 0.2)),
         entropy_coefficient=float(model_raw.get("training", {}).get("entropy_coefficient", 0.0)),
         seed=int(model_raw["experiment"]["master_seed"]), actor_config=actor,

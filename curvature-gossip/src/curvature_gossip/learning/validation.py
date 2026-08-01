@@ -17,7 +17,10 @@ from ..policies.random_policy import UniformRandomPolicy
 from ..random_streams import make_rng
 from ..simulator import GossipSimulator, SimulationParameters
 from ..topology import get_topology_generator
-from .features import encode_observations, encode_stage1_observations, encode_stage2_observations
+from .features import (
+    encode_observations, encode_stage1_observations, encode_stage2_observations,
+    encode_stage2_mpnn_observations,
+)
 
 
 @dataclass(frozen=True)
@@ -141,10 +144,12 @@ def _build_simulator(raw: Mapping, scenario: ValidationScenario, policy_name: st
     )
 
 
-def _run_neural_scenario(model, raw: Mapping, scenario: ValidationScenario) -> Tuple[Mapping, Dict[str, float], np.ndarray]:
-    """Sample the frozen Actor while recording all local Bernoulli probabilities."""
+def _run_neural_scenario(
+    model, raw: Mapping, scenario: ValidationScenario, policy_name: str = "nn", stage1_only: bool = False,
+) -> Tuple[Mapping, Dict[str, float], np.ndarray]:
+    """Sample the frozen Actor or its curvature base while recording local probabilities."""
     training = raw.get("training", {})
-    simulator = _build_simulator(raw, scenario, "nn", 0.0)
+    simulator = _build_simulator(raw, scenario, policy_name, 0.0)
     action_rng = simulator.policy_rng
     probability_steps = []
     for slot in range(scenario.slots):
@@ -152,12 +157,16 @@ def _run_neural_scenario(model, raw: Mapping, scenario: ValidationScenario) -> T
         if model.actor_stage == 1:
             encoded = encode_stage1_observations(observations, scenario.target_tx_ratio)
         elif model.actor_stage == 2:
-            encoded = encode_stage2_observations(
+            residual = raw.get("actor", {}).get("residual", {})
+            encoder = (encode_stage2_mpnn_observations
+                       if residual.get("architecture", "mlp") == "mpnn"
+                       else encode_stage2_observations)
+            encoded = encoder(
                 observations, scenario.target_tx_ratio, scenario.update_probability,
                 float(training.get("consecutive_tx_scale", 3.0)),
                 float(training.get("neighbor_confidence_time_constant", 20.0)),
                 float(raw.get("observation", {}).get("congestion_feature_scale", 5.0)),
-                bool(raw.get("actor", {}).get("residual", {}).get("include_scenario_context", False)),
+                bool(residual.get("include_scenario_context", False)),
             )
         else:
             encoded = encode_observations(
@@ -166,7 +175,10 @@ def _run_neural_scenario(model, raw: Mapping, scenario: ValidationScenario) -> T
                 float(training.get("neighbor_confidence_time_constant", 20.0)),
                 float(raw.get("observation", {}).get("congestion_feature_scale", 5.0)),
             )
-        probabilities = np.asarray(model.predict_probabilities(encoded), dtype=np.float32)
+        probabilities = np.asarray(
+            model.predict_stage1_probabilities(encoded) if stage1_only else model.predict_probabilities(encoded),
+            dtype=np.float32,
+        )
         if probabilities.shape != (scenario.n_nodes,) or not np.isfinite(probabilities).all():
             raise ValueError("Actor evaluation must return finite [N] probabilities")
         actions = action_rng.random(scenario.n_nodes) < probabilities
@@ -204,6 +216,12 @@ def evaluate_fixed_validation(model, raw: Mapping, checkpoint_episode: int, chec
     deltas_matched, deltas_fixed = [], []
     for scenario in validation_scenarios(raw):
         nn_summary, nn_stats, nn_matrix = _run_neural_scenario(model, raw, scenario)
+        stage1_summary = stage1_stats = stage1_matrix = None
+        if model.actor_stage in (1, 2):
+            stage1_summary, stage1_stats, stage1_matrix = _run_neural_scenario(
+                # Reuse NN's Bernoulli stream so this is a genuinely paired action comparison.
+                model, raw, scenario, policy_name="nn", stage1_only=True
+            )
         matched_probability = float(np.mean(nn_matrix))
         fixed_summary, fixed_stats = _run_random_scenario(
             raw, scenario, "fixed_random", scenario.target_tx_ratio
@@ -216,14 +234,18 @@ def evaluate_fixed_validation(model, raw: Mapping, checkpoint_episode: int, chec
         delta_fixed = float(nn_summary["mean_VAoI"] - fixed_summary["mean_VAoI"])
         deltas_matched.append(delta_matched)
         deltas_fixed.append(delta_fixed)
-        for policy_name, summary, stats, reference_probability in (
+        policies = [
             ("nn", nn_summary, nn_stats, matched_probability),
-            ("fixed_random", fixed_summary, fixed_stats, scenario.target_tx_ratio),
+        ]
+        if stage1_summary is not None:
+            policies.append(("stage1_only", stage1_summary, stage1_stats, float(np.mean(stage1_matrix))))
+        policies.extend([
             ("matched_random", matched_summary, matched_stats, matched_probability),
-        ):
+            ("fixed_random", fixed_summary, fixed_stats, scenario.target_tx_ratio),
+        ])
+        for policy_name, summary, stats, reference_probability in policies:
             row = {
                 "checkpoint_episode": int(checkpoint_episode),
-                "checkpoint_label": str(checkpoint_label),
                 "scenario_id": scenario.scenario_id,
                 "policy": policy_name,
                 "n_nodes": scenario.n_nodes,
@@ -242,6 +264,7 @@ def evaluate_fixed_validation(model, raw: Mapping, checkpoint_episode: int, chec
         raise RuntimeError("fixed validation unexpectedly changed model or optimizer variables")
 
     nn_rows = [row for row in scenario_rows if row["policy"] == "nn"]
+    stage1_rows = [row for row in scenario_rows if row["policy"] == "stage1_only"]
     fixed_rows = [row for row in scenario_rows if row["policy"] == "fixed_random"]
     matched_rows = [row for row in scenario_rows if row["policy"] == "matched_random"]
     # All configured V3 validation scenarios use the same N; concatenate them for global q statistics.
@@ -251,17 +274,34 @@ def evaluate_fixed_validation(model, raw: Mapping, checkpoint_episode: int, chec
     fixed_mean, fixed_low, fixed_high = _paired_mean_ci(deltas_fixed)
     summary_row: Dict[str, Any] = {
         "checkpoint_episode": int(checkpoint_episode),
-        "checkpoint_label": str(checkpoint_label),
         "n_scenarios": len(nn_rows),
         "nn_mean_VAoI": float(np.mean([row["mean_VAoI"] for row in nn_rows])),
-        "fixed_random_mean_VAoI": float(np.mean([row["mean_VAoI"] for row in fixed_rows])),
+    }
+    if stage1_rows:
+        summary_row.update({
+            "stage1_only_mean_VAoI": float(np.mean([row["mean_VAoI"] for row in stage1_rows])),
+        })
+    summary_row.update({
         "matched_random_mean_VAoI": float(np.mean([row["mean_VAoI"] for row in matched_rows])),
+        "fixed_random_mean_VAoI": float(np.mean([row["mean_VAoI"] for row in fixed_rows])),
         "nn_mean_action_probability": float(np.mean([row["action_prob_mean"] for row in nn_rows])),
-        "fixed_random_mean_action_probability": float(np.mean([row["action_prob_mean"] for row in fixed_rows])),
+    })
+    if stage1_rows:
+        summary_row.update({
+            "stage1_only_mean_action_probability": float(np.mean([row["action_prob_mean"] for row in stage1_rows])),
+        })
+    summary_row.update({
         "matched_random_mean_action_probability": float(np.mean([row["action_prob_mean"] for row in matched_rows])),
+        "fixed_random_mean_action_probability": float(np.mean([row["action_prob_mean"] for row in fixed_rows])),
         "nn_actual_tx_ratio": float(np.mean([row["actual_tx_ratio"] for row in nn_rows])),
-        "fixed_random_actual_tx_ratio": float(np.mean([row["actual_tx_ratio"] for row in fixed_rows])),
+    })
+    if stage1_rows:
+        summary_row.update({
+            "stage1_only_actual_tx_ratio": float(np.mean([row["actual_tx_ratio"] for row in stage1_rows])),
+        })
+    summary_row.update({
         "matched_random_actual_tx_ratio": float(np.mean([row["actual_tx_ratio"] for row in matched_rows])),
+        "fixed_random_actual_tx_ratio": float(np.mean([row["actual_tx_ratio"] for row in fixed_rows])),
         "delta_vaoi_matched_mean": matched_mean,
         "delta_vaoi_matched_ci95_low": matched_low,
         "delta_vaoi_matched_ci95_high": matched_high,
@@ -269,6 +309,6 @@ def evaluate_fixed_validation(model, raw: Mapping, checkpoint_episode: int, chec
         "delta_vaoi_fixed_ci95_low": fixed_low,
         "delta_vaoi_fixed_ci95_high": fixed_high,
         "nn_beats_matched_fraction": float(np.mean(np.asarray(deltas_matched) < 0.0)),
-    }
+    })
     summary_row.update(nn_stats)
     return summary_row, scenario_rows

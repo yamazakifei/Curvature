@@ -158,6 +158,79 @@ the supplied training smoke run:
 conda run --no-capture-output -n GRL_AoI_cpu37 python -m curvature_gossip.cli run --config configs/nn_2layers_stage1_eval_smoke.yaml
 ```
 
+## Stage-2 local edge-message MPNN (2026-07-30)
+
+Stage 2 also supports `actor.residual.architecture: mpnn`. It is a distributed
+local edge-message MPNN, not a new Actor stage: a directed `j -> i` message
+uses only receiver `i`'s local node context and its cached estimate of `j`.
+It never reads neighbor-current state or hidden state, global simulator state,
+node ID, or an additional control channel.
+
+Node features are `normalized_degree`, `time_since_last_tx`,
+`consecutive_tx_attempts`, `congestion_ewma`, and
+`self_information_increment`; edges use validity, potential freshness gain,
+and confidence. The fixed graph is `[5+3] -> 32 -> 16`, mean/max aggregation
+(`32`), and a `38 -> 64 -> 64 -> 1` update MLP (`37` no-curvature). MPNN and
+MLP residual checkpoints are incompatible.
+
+Smoke runs write to `result_GNN/`:
+
+```powershell
+conda run --no-capture-output -n GRL_AoI_cpu37 python scripts/train_nn_ctde.py --config configs/nn_2layers_stage2_mpnn_smoke.yaml
+conda run --no-capture-output -n GRL_AoI_cpu37 python scripts/train_nn_ctde.py --config configs/nn_2layers_stage2_mpnn_no_curvature_smoke.yaml
+```
+
+Formal paired MPNN configurations are `nn_2layers_stage2_mpnn_heuristic_channel.yaml`
+and `nn_2layers_stage2_mpnn_no_curvature_heuristic_channel.yaml`.
+
+### Batch comparison of best checkpoints
+
+Use `scripts/compare_best_models.py` to compare any number of
+`checkpoints/best_validation/model` files. Each directory supplies its own
+`training_config.yaml`; its architecture and weights come from that file, while
+the shared `configs/compare/compare_n100_heuristic_channel.yaml` constructs
+the same evaluation environments for every model. The script writes the ranked aggregate table plus per-scenario results to
+`result_compare/`. The aggregate records mean, minimum, and maximum NN
+broadcast probabilities. For the usual comparison, edit `DEFAULT_MODEL_DIRS`
+and `DEFAULT_OUTPUT_DIR` at the top of the script, then run it with no
+arguments. The command-line arguments remain available as temporary overrides.
+Edit the common comparison YAML's `validation.scenarios` to change every
+model's fixed scenarios together. Use `--evaluation-config` to select another
+common scenario YAML.
+
+The defaults are anchored to the project directory, so VS Code's Run Python
+File button does not depend on its working directory. A no-argument run
+refreshes `result_compare/`; use `--no-overwrite` to preserve existing CSVs.
+
+```powershell
+conda run --no-capture-output -n GRL_AoI_cpu37 python scripts/compare_best_models.py --model-dirs result_GNN\model_a result_GNN\model_b result_2layers\model_c --output-dir result_compare
+```
+
+The shared comparison YAML supplies `topology`, `source`, `channel`,
+`curvature`, `constraints`, `observation`, `experiment.master_seed`, and
+`validation.scenarios`. Its scenarios define topology, source-update, channel,
+and action seed streams plus `slots`, `n_nodes`, update probability, and target
+broadcast ratio. It never overwrites model result folders or their persisted
+training configuration. Its `comparison_defaults` anchors let those four
+common values be adjusted once and applied to every scenario.
+
+## Actor/Critic learning rates
+
+The PPO training YAML supports separate optimizer learning rates:
+
+```yaml
+training:
+  learning_rate: 0.0003       # legacy shared fallback
+  actor_learning_rate: 0.0002
+  critic_learning_rate: 0.001
+```
+
+`actor_learning_rate` and `critic_learning_rate` take precedence when they are
+present. If either one is omitted, it falls back to `learning_rate`; if the
+legacy `learning_rate` is the only setting, both optimizers use that value.
+Existing YAML files therefore keep their original behavior. The resolved
+values are also recorded in `model_metadata.json`.
+
 ## Stage-2 配置维护
 
 `configs/nn_2layers_stage2_heuristic_channel.yaml` 使用 YAML 锚点统一维护默认

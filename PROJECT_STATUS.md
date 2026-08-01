@@ -1,5 +1,58 @@
 # Curvature-Gossip Project Status
 
+## Independent Actor/Critic learning rates (2026-07-31)
+
+CTDE-PPO now accepts `training.actor_learning_rate` and
+`training.critic_learning_rate` independently. Each missing key falls back to
+`training.learning_rate`, so existing YAML configurations remain unchanged.
+The training entry point and checkpoint-reconstruction evaluation scripts use
+the same resolution logic, and resolved values are written to
+`model_metadata.json`.
+
+## Local edge-message MPNN Stage-2 (2026-07-30)
+
+Stage-2 residuals now support `architecture: mpnn` alongside the default MLP.
+The MPNN uses five self features and three locally cached directed-edge
+features, vectorized mean/max segment aggregation, and a zero-initialized
+residual update. It has no neighbor-current-state input, hidden-state exchange,
+or extra communication. All new MPNN configurations write under
+`curvature-gossip/result_GNN/`.
+
+Verified smoke configurations are
+`configs/nn_2layers_stage2_mpnn_smoke.yaml` and
+`configs/nn_2layers_stage2_mpnn_no_curvature_smoke.yaml`. Formal paired full
+and no-curvature MPNN configurations, plus a paired no-curvature MLP baseline,
+are under `curvature-gossip/configs/`.
+
+### Fixed validation comparison update (2026-07-31)
+
+For Stage-2 Actors, fixed validation now records a paired `stage1_only` policy
+that samples the frozen curvature-base (Stage-1) probability at every node.
+The validation history orders mean VAoI and mean broadcast probability as
+Stage-2 NN, Stage-1-only, matched-rate random, then fixed-rate random.
+`checkpoint_label` is removed from both validation CSVs, and CSV floating
+values are written with five decimal places for readability.
+
+### Batch best-checkpoint comparison (2026-07-31)
+
+`scripts/compare_best_models.py` restores any number of
+`best_validation/model` checkpoints from their own result directories and
+training configurations. It verifies that all fixed-validation settings match,
+then writes ranked aggregate and per-scenario CSVs to `result_compare/`,
+including each NN's mean, minimum, and maximum broadcast probability.
+The script's top-level `DEFAULT_MODEL_DIRS` and `DEFAULT_OUTPUT_DIR` provide
+the editable no-argument batch configuration. Its common
+`configs/compare/compare_n100_heuristic_channel.yaml` supplies simulator
+settings and `validation.scenarios` for every restored model, while each
+model's saved `training_config.yaml` still supplies its network architecture.
+The public comparison YAML centralizes target transmission ratio, validation
+slots, node count, and update probability as YAML anchors under
+`comparison_defaults`.
+Default input, output, and evaluation paths are anchored to the project root,
+so direct IDE execution is independent of the current working directory. A
+no-argument run refreshes the default comparison output; `--no-overwrite`
+restores the protective fail-on-existing-output behavior.
+
 ## NN_2layers: Stage 1 complete
 
 Stage 0 establishes evaluation-only baselines for the staged two-layer Actor

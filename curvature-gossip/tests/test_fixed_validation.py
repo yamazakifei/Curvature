@@ -7,6 +7,7 @@ import numpy as np
 import yaml
 
 from curvature_gossip.learning.ctde_ppo import CTDEPPO
+from curvature_gossip.learning.trainer import _write_csv_history
 from curvature_gossip.learning.validation import evaluate_fixed_validation, probability_statistics
 
 
@@ -52,6 +53,34 @@ def test_fixed_validation_is_reproducible_and_uses_matched_rate_random():
         "action_prob_per_node_mean_std",
     ):
         assert name in summary_a and np.isfinite(summary_a[name])
+
+
+def test_stage2_fixed_validation_includes_stage1_only_and_compact_ordered_csv(tmp_path):
+    """Stage-2 validation must compare its residual policy with the shared Stage-1 base."""
+    raw = _tiny_validation_config()
+    model = CTDEPPO(seed=127, actor_config={
+        "stage": 2,
+        "curvature": {"center": 0.0, "alpha_init": 1.0, "alpha_override": 1.0},
+        "residual": {"enabled": True, "hidden_dims": [64, 64], "activation": "relu",
+                     "zero_init_output": True, "use_stage1_reference": True,
+                     "detach_stage1_reference": True, "freeze_stage1": True},
+    })
+    try:
+        summary, rows = evaluate_fixed_validation(model, raw, 3, "unused")
+    finally:
+        model.close()
+    assert [row["policy"] for row in rows] == ["nn", "stage1_only", "matched_random", "fixed_random"]
+    assert "checkpoint_label" not in summary and all("checkpoint_label" not in row for row in rows)
+    assert np.isclose(summary["nn_mean_VAoI"], summary["stage1_only_mean_VAoI"])
+    assert np.isclose(summary["nn_mean_action_probability"], summary["stage1_only_mean_action_probability"])
+    path = tmp_path / "validation_history.csv"
+    _write_csv_history(path, [summary])
+    header, values = path.read_text(encoding="utf-8").splitlines()
+    columns = header.split(",")
+    assert columns.index("nn_mean_VAoI") < columns.index("stage1_only_mean_VAoI") < columns.index("matched_random_mean_VAoI") < columns.index("fixed_random_mean_VAoI")
+    assert columns.index("nn_mean_action_probability") < columns.index("stage1_only_mean_action_probability") < columns.index("matched_random_mean_action_probability") < columns.index("fixed_random_mean_action_probability")
+    assert values.split(",")[columns.index("nn_mean_VAoI")].count(".") == 1
+    assert len(values.split(",")[columns.index("nn_mean_VAoI")].split(".")[1]) == 5
 
 
 def test_probability_statistics_separates_node_and_global_variation():

@@ -1,0 +1,12 @@
+{
+  "checkpoint_relative_path": "checkpoints\\best_validation\\model",
+  "comparison_per_scenario_csv": "comparison_per_scenario.csv",
+  "comparison_summary_csv": "comparison_summary.csv",
+  "evaluation_config": "D:\\ZMF\\2026Curvature\\curvature-gossip\\configs\\compare\\compare_n100_heuristic_channel.yaml",
+  "models": [
+    "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\mpnn_heuristic_channel_n100_u0.20_b0.10_a1.5_lr1e-3",
+    "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\mpnn_heuristic_channel_n100_u0.20_b0.10_a1.5",
+    "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_2layers\\nn_2layers_stage2_heuristic_channel_n100_u0.20_b0.10_a1.50_v2"
+  ],
+  "note": "Every model uses its own training_config.yaml for architecture and weights; the shared evaluation config defines all validation scenarios."
+}

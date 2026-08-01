@@ -1,0 +1,73 @@
+# for compare_best_models.py
+# 配置比较不同model的验证场景
+experiment:
+  id: compare_n100_u0.20_b0.10_a1.5
+  description: "0731 first test."
+  master_seed: 20260723
+
+# Change these four anchors to update every linked comparison setting.
+comparison_defaults:
+  target_tx_ratio: &comparison_target_tx_ratio 0.1
+  slots: &comparison_slots 500
+  n_nodes: &comparison_n_nodes 100
+  update_probability: &comparison_update_probability 0.2
+
+topology:
+  type: soft_two_community
+  params:
+    n_nodes: *comparison_n_nodes
+    cluster_sizes: [50, 50]
+    area_width_m: 400.0
+    area_height_m: 300.0
+    communication_radius_m: 40.0
+    center_separation_m: 160.0
+    cluster_radius_m: 80.0
+    cross_edge_count_range: [2, 4]
+    min_cross_endpoints_per_cluster: 2
+    min_degree: 3
+    require_induced_cluster_connected: true
+    min_edge_connectivity: 2
+    max_attempts: 2000
+
+source:
+  update_probability: *comparison_update_probability
+
+channel:
+  tx_power_dbm: 20.0
+  pathloss_reference_db: 30.0
+  reference_distance_m: 1.0
+  pathloss_exponent: 2.5
+  shadowing_std_db: 0.0
+  reciprocal_shadowing: true
+  rayleigh_fading: false
+  noise_psd_dbm_per_hz: -174.0
+  bandwidth_hz: 1000000.0
+  noise_figure_db: 5.0
+  sinr_threshold_db: -3.0
+
+curvature:
+  method: distributed_af3
+  normalization: local_degree_bound
+
+constraints:
+  target_tx_ratio: *comparison_target_tx_ratio
+  per_node_cap_multiplier: 1.5
+
+observation:
+  consecutive_tx_scale: 3.0
+  neighbor_confidence_time_constant: 20.0
+  congestion_ewma_beta: 0.8
+  congestion_feature_scale: 5.0
+
+validation:
+  scenarios:
+    - {id: v00, topology_seed: 1000, source_update_seed: 161000, channel_shadowing_seed: 271000, channel_fading_seed: 810000, policy_action_seed: 191000, slots: *comparison_slots, n_nodes: *comparison_n_nodes, update_probability: *comparison_update_probability, target_tx_ratio: *comparison_target_tx_ratio}
+    - {id: v01, topology_seed: 1001, source_update_seed: 161001, channel_shadowing_seed: 271001, channel_fading_seed: 810010, policy_action_seed: 191001, slots: *comparison_slots, n_nodes: *comparison_n_nodes, update_probability: *comparison_update_probability, target_tx_ratio: *comparison_target_tx_ratio}
+    - {id: v02, topology_seed: 1002, source_update_seed: 161002, channel_shadowing_seed: 271002, channel_fading_seed: 810020, policy_action_seed: 191002, slots: *comparison_slots, n_nodes: *comparison_n_nodes, update_probability: *comparison_update_probability, target_tx_ratio: *comparison_target_tx_ratio}
+    - {id: v03, topology_seed: 1003, source_update_seed: 161003, channel_shadowing_seed: 271003, channel_fading_seed: 810030, policy_action_seed: 191003, slots: *comparison_slots, n_nodes: *comparison_n_nodes, update_probability: *comparison_update_probability, target_tx_ratio: *comparison_target_tx_ratio}
+    - {id: v04, topology_seed: 1004, source_update_seed: 161004, channel_shadowing_seed: 271004, channel_fading_seed: 810040, policy_action_seed: 191004, slots: *comparison_slots, n_nodes: *comparison_n_nodes, update_probability: *comparison_update_probability, target_tx_ratio: *comparison_target_tx_ratio}
+    - {id: v05, topology_seed: 1005, source_update_seed: 161005, channel_shadowing_seed: 271005, channel_fading_seed: 810050, policy_action_seed: 191005, slots: *comparison_slots, n_nodes: *comparison_n_nodes, update_probability: *comparison_update_probability, target_tx_ratio: *comparison_target_tx_ratio}
+    - {id: v06, topology_seed: 1006, source_update_seed: 161006, channel_shadowing_seed: 271006, channel_fading_seed: 810060, policy_action_seed: 191006, slots: *comparison_slots, n_nodes: *comparison_n_nodes, update_probability: *comparison_update_probability, target_tx_ratio: *comparison_target_tx_ratio}
+    - {id: v07, topology_seed: 1007, source_update_seed: 161007, channel_shadowing_seed: 271007, channel_fading_seed: 810070, policy_action_seed: 191007, slots: *comparison_slots, n_nodes: *comparison_n_nodes, update_probability: *comparison_update_probability, target_tx_ratio: *comparison_target_tx_ratio}
+    - {id: v08, topology_seed: 1008, source_update_seed: 161008, channel_shadowing_seed: 271008, channel_fading_seed: 810080, policy_action_seed: 191008, slots: *comparison_slots, n_nodes: *comparison_n_nodes, update_probability: *comparison_update_probability, target_tx_ratio: *comparison_target_tx_ratio}
+    - {id: v09, topology_seed: 1009, source_update_seed: 161009, channel_shadowing_seed: 271009, channel_fading_seed: 810090, policy_action_seed: 191009, slots: *comparison_slots, n_nodes: *comparison_n_nodes, update_probability: *comparison_update_probability, target_tx_ratio: *comparison_target_tx_ratio}

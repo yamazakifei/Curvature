@@ -44,6 +44,17 @@ class Stage2EncodedObservations:
     residual_context: np.ndarray
 
 
+@dataclass(frozen=True)
+class Stage2MPNNEncodedObservations:
+    """Strictly local Stage-2 MPNN inputs, including directed cache-estimate edges."""
+
+    curvature_scores: np.ndarray
+    target_tx_ratios: np.ndarray
+    node_context: np.ndarray
+    edge_index: np.ndarray
+    edge_features: np.ndarray
+
+
 STAGE1_FEATURE_NAMES = ("incident_bottleneck_max",)
 STAGE2_CONTEXT_FEATURE_NAMES = (
     "normalized_degree", "time_since_last_tx", "consecutive_tx_attempts",
@@ -52,6 +63,14 @@ STAGE2_CONTEXT_FEATURE_NAMES = (
 )
 STAGE2_SCENARIO_CONTEXT_FEATURE_NAMES = ("log_network_size", "update_probability", "target_tx_ratio")
 STAGE2_CONTEXT_INDICES = (0, 1, 2, 3, 6, 7, 8, 10)
+STAGE2_MPNN_NODE_FEATURE_NAMES = (
+    "normalized_degree", "time_since_last_tx", "consecutive_tx_attempts",
+    "congestion_ewma", "self_information_increment",
+)
+STAGE2_MPNN_EDGE_FEATURE_NAMES = (
+    "neighbor_estimate_valid", "neighbor_freshness_gain", "neighbor_estimate_confidence",
+)
+STAGE2_MPNN_NODE_CONTEXT_INDICES = (0, 1, 2, 3, 6)
 
 
 def _validate_probability(name: str, value: float, strict_lower: bool = False) -> float:
@@ -178,6 +197,83 @@ def encode_stage2_observations(
             neighbor_confidence_time_constant, congestion_feature_scale,
             include_scenario_context,
         ),
+    )
+
+
+def encode_stage2_mpnn_observations(
+    observations: Sequence[NodeObservation],
+    target_tx_ratio: float,
+    update_probability: float,
+    consecutive_tx_scale: float = 3.0,
+    neighbor_confidence_time_constant: float = 20.0,
+    congestion_feature_scale: float = 5.0,
+    include_scenario_context: bool = False,
+) -> Stage2MPNNEncodedObservations:
+    """Encode local node state and receiver-owned neighbor-cache estimates for the MPNN.
+
+    Each directed ``j -> i`` edge uses only state cached by receiver ``i``;
+    sender current state is intentionally never read.  The explicit edge index
+    remains useful for batching and graph-structure verification.
+    """
+    observations = tuple(observations)
+    if not observations:
+        raise ValueError("at least one node observation is required")
+    target_tx_ratio = _validate_probability("target_tx_ratio", target_tx_ratio, True)
+    if not np.isfinite(neighbor_confidence_time_constant) or neighbor_confidence_time_constant <= 0.0:
+        raise ValueError("neighbor_confidence_time_constant must be positive")
+
+    # Reuse legacy local formulas, then select only the five permitted self features.
+    legacy = encode_observations(
+        observations, target_tx_ratio, update_probability, consecutive_tx_scale,
+        neighbor_confidence_time_constant, congestion_feature_scale,
+    ).node_features
+    node_context = legacy[:, STAGE2_MPNN_NODE_CONTEXT_INDICES]
+    if include_scenario_context:
+        node_context = np.concatenate([node_context, legacy[:, (11, 12, 13)]], axis=1)
+    expected_width = 8 if include_scenario_context else 5
+    if node_context.shape != (len(observations), expected_width) or not np.isfinite(node_context).all():
+        raise ValueError("MPNN node context must be finite with the configured fixed width")
+
+    node_ids = [int(item.node_id) for item in observations]
+    if len(set(node_ids)) != len(node_ids):
+        raise ValueError("each node observation must have a unique node_id")
+    node_rows = {node_id: row for row, node_id in enumerate(node_ids)}
+    senders, receivers, features = [], [], []
+    for receiver_row, observation in enumerate(observations):
+        degree = len(observation.neighbor_ids)
+        estimates = np.asarray(observation.neighbor_cache_estimates, dtype=np.int64)
+        valid = np.asarray(observation.neighbor_estimate_valid, dtype=bool)
+        ages = np.asarray(observation.neighbor_estimate_age, dtype=np.int64)
+        own = np.asarray(observation.own_cache_versions, dtype=np.int64)
+        if estimates.shape != (degree, own.size) or valid.shape != (degree,) or ages.shape != (degree,):
+            raise ValueError("neighbor estimate arrays must align with neighbor_ids and cache size")
+        if np.any(valid & (ages < 0)) or np.any(~valid & (ages != -1)):
+            raise ValueError("valid estimates require nonnegative ages and invalid ones age -1")
+        for neighbor_index, sender_id in enumerate(observation.neighbor_ids):
+            if int(sender_id) not in node_rows:
+                raise ValueError("every observed neighbor must be present in the observation batch")
+            is_valid = float(valid[neighbor_index])
+            gain = (float(np.mean(own > estimates[neighbor_index])) if valid[neighbor_index] else 0.0)
+            confidence = (float(np.exp(-ages[neighbor_index] / neighbor_confidence_time_constant))
+                          if valid[neighbor_index] else 0.0)
+            feature = np.asarray([is_valid, gain, confidence], dtype=np.float32)
+            if not np.isfinite(feature).all() or np.any(feature < 0.0) or np.any(feature > 1.0):
+                raise ValueError("MPNN edge features must be finite and in [0, 1]")
+            senders.append(node_rows[int(sender_id)])
+            receivers.append(receiver_row)
+            features.append(feature)
+    edge_index = (np.asarray([senders, receivers], dtype=np.int32)
+                  if senders else np.empty((2, 0), dtype=np.int32))
+    edge_features = (np.asarray(features, dtype=np.float32).reshape(-1, 3)
+                     if features else np.empty((0, 3), dtype=np.float32))
+    if edge_index.shape[1] != edge_features.shape[0]:
+        raise ValueError("MPNN edge index and feature counts must agree")
+    return Stage2MPNNEncodedObservations(
+        curvature_scores=encode_curvature_score(observations),
+        target_tx_ratios=np.full(len(observations), target_tx_ratio, dtype=np.float32),
+        node_context=node_context.astype(np.float32, copy=False),
+        edge_index=edge_index,
+        edge_features=edge_features,
     )
 
 
