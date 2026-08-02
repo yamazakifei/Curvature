@@ -9,6 +9,15 @@ The training entry point and checkpoint-reconstruction evaluation scripts use
 the same resolution logic, and resolved values are written to
 `model_metadata.json`.
 
+## MPNN curvature edge feature (2026-08-01)
+
+The Stage-2 MPNN edge vector is now
+`neighbor_freshness_gain`, `neighbor_estimate_confidence`, and
+`clipped_bottleneck_score`. The latter is
+`min(max(-kappa_ij, 0), bmax) / bmax`, where `bmax` is configured under
+`actor.residual.mpnn`. The full-curvature MPNN enables this feature; the
+no-curvature paired ablation disables it and supplies zero in that slot.
+
 ## Local edge-message MPNN Stage-2 (2026-07-30)
 
 Stage-2 residuals now support `architecture: mpnn` alongside the default MLP.

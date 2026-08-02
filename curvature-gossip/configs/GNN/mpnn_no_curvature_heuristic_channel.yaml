@@ -67,7 +67,7 @@ actor:
     include_curvature_mean: false
     include_curvature_freshness_interaction: false
     freeze_stage1: true
-    mpnn: {message_hidden_dims: [32], message_dim: 16, update_hidden_dims: [64, 64], aggregation: mean_max, condition_message_on_receiver: true, use_sender_node_features: false, use_curvature_edge_feature: false}
+    mpnn: {message_hidden_dims: [32], message_dim: 16, update_hidden_dims: [64, 64], aggregation: mean_max, condition_message_on_receiver: true, use_sender_node_features: false, use_curvature_edge_feature: false, bmax: 1.0}
 observation:
   consecutive_tx_scale: 3.0
   neighbor_confidence_time_constant: 20.0

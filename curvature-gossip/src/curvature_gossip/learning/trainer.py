@@ -227,12 +227,20 @@ def _stage1_actor_config(raw: Mapping) -> Mapping:
         required = {
             "message_hidden_dims": [32], "message_dim": 16, "update_hidden_dims": [64, 64],
             "aggregation": "mean_max", "condition_message_on_receiver": True,
-            "use_sender_node_features": False, "use_curvature_edge_feature": False,
+            "use_sender_node_features": False,
         }
         for key, expected in required.items():
             if mpnn.get(key, expected) != expected:
                 raise ValueError("Stage 2 MPNN requires mpnn.{}={!r}".format(key, expected))
-        residual["mpnn"] = dict(required)
+        use_curvature_edge_feature = bool(mpnn.get("use_curvature_edge_feature", False))
+        if not use_stage1_reference and use_curvature_edge_feature:
+            raise ValueError("no-curvature Stage 2 MPNN must disable use_curvature_edge_feature")
+        bmax = float(mpnn.get("bmax", 1.0))
+        if not np.isfinite(bmax) or bmax <= 0.0:
+            raise ValueError("Stage 2 MPNN requires mpnn.bmax to be finite and positive")
+        residual["mpnn"] = dict(
+            required, use_curvature_edge_feature=use_curvature_edge_feature, bmax=bmax,
+        )
         node_features = list(STAGE2_MPNN_NODE_FEATURE_NAMES)
         if bool(residual.get("include_scenario_context", False)):
             node_features += ["log_network_size", "update_probability", "target_tx_ratio"]
@@ -244,7 +252,8 @@ def _stage1_actor_config(raw: Mapping) -> Mapping:
             "message_dim": 16, "aggregation": "mean_max", "aggregated_message_dim": 32,
             "decoder_input_dim": len(node_features) + 32 + (1 if use_stage1_reference else 0),
             "condition_message_on_receiver": True, "use_sender_node_features": False,
-            "use_curvature_edge_feature": False, "input_feature_names": node_features,
+            "use_curvature_edge_feature": use_curvature_edge_feature, "bmax": bmax,
+            "input_feature_names": node_features,
         })
         return actor
     context_features = list(stage2_context_feature_names(
@@ -424,12 +433,23 @@ def train_ctde(config_path: str):
                 if model.actor_stage == 1:
                     encoded = encode_stage1_observations(observations, target)
                 elif model.actor_stage == 2:
-                    encoder = (encode_stage2_mpnn_observations
-                               if actor_config["residual"].get("architecture", "mlp") == "mpnn"
-                               else encode_stage2_observations)
-                    encoded = encoder(observations, target, simulator.parameters.update_probability,
-                                      consecutive_tx_scale, confidence_time_constant, congestion_feature_scale,
-                                      bool(actor_config["residual"].get("include_scenario_context", False)))
+                    residual = actor_config["residual"]
+                    include_scenario_context = bool(residual.get("include_scenario_context", False))
+                    if residual.get("architecture", "mlp") == "mpnn":
+                        # MPNN-only edge controls stay out of the legacy MLP encoder.
+                        encoded = encode_stage2_mpnn_observations(
+                            observations, target, simulator.parameters.update_probability,
+                            consecutive_tx_scale, confidence_time_constant, congestion_feature_scale,
+                            include_scenario_context,
+                            use_curvature_edge_feature=bool(residual.get("mpnn", {}).get("use_curvature_edge_feature", False)),
+                            bmax=float(residual.get("mpnn", {}).get("bmax", 1.0)),
+                        )
+                    else:
+                        encoded = encode_stage2_observations(
+                            observations, target, simulator.parameters.update_probability,
+                            consecutive_tx_scale, confidence_time_constant, congestion_feature_scale,
+                            include_scenario_context,
+                        )
                 else:
                     encoded = encode_observations(
                         observations, target, simulator.parameters.update_probability,
@@ -547,7 +567,7 @@ def train_ctde(config_path: str):
                         "aggregation": actor_config["aggregation"], "aggregated_message_dim": actor_config["aggregated_message_dim"],
                         "decoder_input_dim": actor_config["decoder_input_dim"], "directed_edge_count": edge_count,
                         "mean_directed_degree": float(edge_count) / simulator.state.n_nodes,
-                        "valid_edge_fraction": float(np.mean(edge_features[:, 0])) if edge_count else 0.0,
+                        "mean_edge_freshness_gain": float(np.mean(edge_features[:, 0])) if edge_count else 0.0,
                         "message_l2_mean": float(np.mean(np.linalg.norm(message, axis=1))) if edge_count else 0.0,
                         "message_l2_std": float(np.std(np.linalg.norm(message, axis=1))) if edge_count else 0.0,
                         "aggregated_message_l2_mean": float(np.mean(np.linalg.norm(aggregated, axis=1))),

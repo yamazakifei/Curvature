@@ -183,6 +183,12 @@ conda run --no-capture-output -n GRL_AoI_cpu37 python scripts/train_nn_ctde.py -
 Formal paired MPNN configurations are `nn_2layers_stage2_mpnn_heuristic_channel.yaml`
 and `nn_2layers_stage2_mpnn_no_curvature_heuristic_channel.yaml`.
 
+The MPNN directed edge input is ordered as
+`neighbor_freshness_gain`, `neighbor_estimate_confidence`, and
+`clipped_bottleneck_score`. The last value is zero for the no-curvature
+ablation. Otherwise it is computed as
+`min(max(-kappa_ij, 0), bmax) / bmax`, with `actor.residual.mpnn.bmax > 0`.
+
 ### Batch comparison of best checkpoints
 
 Use `scripts/compare_best_models.py` to compare any number of

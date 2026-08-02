@@ -158,16 +158,22 @@ def _run_neural_scenario(
             encoded = encode_stage1_observations(observations, scenario.target_tx_ratio)
         elif model.actor_stage == 2:
             residual = raw.get("actor", {}).get("residual", {})
-            encoder = (encode_stage2_mpnn_observations
-                       if residual.get("architecture", "mlp") == "mpnn"
-                       else encode_stage2_observations)
-            encoded = encoder(
+            include_scenario_context = bool(residual.get("include_scenario_context", False))
+            encoder_args = (
                 observations, scenario.target_tx_ratio, scenario.update_probability,
                 float(training.get("consecutive_tx_scale", 3.0)),
                 float(training.get("neighbor_confidence_time_constant", 20.0)),
                 float(raw.get("observation", {}).get("congestion_feature_scale", 5.0)),
-                bool(residual.get("include_scenario_context", False)),
+                include_scenario_context,
             )
+            if residual.get("architecture", "mlp") == "mpnn":
+                encoded = encode_stage2_mpnn_observations(
+                    *encoder_args,
+                    use_curvature_edge_feature=bool(residual.get("mpnn", {}).get("use_curvature_edge_feature", False)),
+                    bmax=float(residual.get("mpnn", {}).get("bmax", 1.0)),
+                )
+            else:
+                encoded = encode_stage2_observations(*encoder_args)
         else:
             encoded = encode_observations(
                 observations, scenario.target_tx_ratio, scenario.update_probability,

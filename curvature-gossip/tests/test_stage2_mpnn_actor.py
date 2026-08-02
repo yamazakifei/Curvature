@@ -17,7 +17,8 @@ def _actor(no_curvature=False):
             "detach_stage1_reference": True, "freeze_stage1": True,
             "mpnn": {"message_hidden_dims": [32], "message_dim": 16, "update_hidden_dims": [64, 64],
                      "aggregation": "mean_max", "condition_message_on_receiver": True,
-                     "use_sender_node_features": False, "use_curvature_edge_feature": False},
+                     "use_sender_node_features": False,
+                     "use_curvature_edge_feature": not no_curvature, "bmax": 1.0},
         },
     }
 
@@ -48,6 +49,7 @@ def test_mpnn_zero_output_keeps_base_and_uses_receiver_conditioned_messages():
 def test_mpnn_batch_offsets_make_disjoint_graphs_and_no_curvature_has_37_decoder_inputs():
     config = _stage1_actor_config({"actor": _actor(True)})
     assert config["architecture_version"] == "no_curvature_stage2_mpnn_v1"
+    assert config["use_curvature_edge_feature"] is False
     assert config["decoder_input_dim"] == 37
     model = CTDEPPO(seed=43, actor_config=_actor(True))
     try:

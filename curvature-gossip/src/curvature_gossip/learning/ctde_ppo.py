@@ -174,9 +174,12 @@ class CTDEPPO:
                 or list(mpnn.get("update_hidden_dims", [64, 64])) != [64, 64]
                 or mpnn.get("aggregation", "mean_max") != "mean_max"
                 or not bool(mpnn.get("condition_message_on_receiver", True))
-                or bool(mpnn.get("use_sender_node_features", False))
-                or bool(mpnn.get("use_curvature_edge_feature", False))):
+                or bool(mpnn.get("use_sender_node_features", False))):
             raise ValueError("Stage 2 MPNN must use the fixed receiver-conditioned mean_max architecture")
+        self.use_curvature_edge_feature = bool(mpnn.get("use_curvature_edge_feature", False))
+        self.mpnn_bmax = float(mpnn.get("bmax", 1.0))
+        if not np.isfinite(self.mpnn_bmax) or self.mpnn_bmax <= 0.0:
+            raise ValueError("Stage 2 MPNN bmax must be finite and positive")
         delta_max = float(residual.get("delta_max", 1.0))
         if not np.isfinite(delta_max) or delta_max <= 0.0:
             raise ValueError("Stage 2 residual.delta_max must be finite and positive")

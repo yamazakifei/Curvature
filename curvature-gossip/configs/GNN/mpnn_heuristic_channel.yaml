@@ -1,8 +1,8 @@
 # 功能：在精调启发式使用的物理信道下训练 Stage-2 NN，同时保留 distributed AF3、
 # 相同随机种子与训练超参数，用于隔离信道配置对 VAoI 的影响。
 experiment:
-  id: mpnn_heuristic_channel_n100_u0.10_b0.10_a1.5_newlr
-  description: "调整a/c各自的学习率"
+  id: mpnnV2_heuristic_channel_n100_u0.20_b0.10_a1.5_newlr
+  description: "mpnnV2：修改了边属性"
   master_seed: 20260723
   # 验证场景的每次仿真时长；训练时长由 training.rollout_slots 单独控制。
   slots: &evaluation_slots 500
@@ -25,7 +25,7 @@ topology:
     max_attempts: 2000
 source:
   # 默认源更新概率；训练和验证场景均引用此值。
-  update_probability: &update_probability 0.10
+  update_probability: &update_probability 0.20
 channel:
   # 与 test_vaoi_vs_transmissions_u0.2 的精调启发式物理信道保持一致。
   tx_power_dbm: 20.0
@@ -68,7 +68,7 @@ actor:
     include_curvature_mean: false
     include_curvature_freshness_interaction: false
     freeze_stage1: true
-    mpnn: {message_hidden_dims: [32], message_dim: 16, update_hidden_dims: [64, 64], aggregation: mean_max, condition_message_on_receiver: true, use_sender_node_features: false, use_curvature_edge_feature: false}
+    mpnn: {message_hidden_dims: [32], message_dim: 16, update_hidden_dims: [64, 64], aggregation: mean_max, condition_message_on_receiver: true, use_sender_node_features: false, use_curvature_edge_feature: true, bmax: 1.0}
 observation:
   consecutive_tx_scale: 3.0
   neighbor_confidence_time_constant: 20.0

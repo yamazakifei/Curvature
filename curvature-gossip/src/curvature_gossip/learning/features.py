@@ -68,7 +68,7 @@ STAGE2_MPNN_NODE_FEATURE_NAMES = (
     "congestion_ewma", "self_information_increment",
 )
 STAGE2_MPNN_EDGE_FEATURE_NAMES = (
-    "neighbor_estimate_valid", "neighbor_freshness_gain", "neighbor_estimate_confidence",
+    "neighbor_freshness_gain", "neighbor_estimate_confidence", "clipped_bottleneck_score",
 )
 STAGE2_MPNN_NODE_CONTEXT_INDICES = (0, 1, 2, 3, 6)
 
@@ -208,12 +208,15 @@ def encode_stage2_mpnn_observations(
     neighbor_confidence_time_constant: float = 20.0,
     congestion_feature_scale: float = 5.0,
     include_scenario_context: bool = False,
+    use_curvature_edge_feature: bool = False,
+    bmax: float = 1.0,
 ) -> Stage2MPNNEncodedObservations:
-    """Encode local node state and receiver-owned neighbor-cache estimates for the MPNN.
+    """Encode local node state, cache estimates, and an optional clipped curvature edge feature.
 
     Each directed ``j -> i`` edge uses only state cached by receiver ``i``;
-    sender current state is intentionally never read.  The explicit edge index
-    remains useful for batching and graph-structure verification.
+    sender current state is intentionally never read.  When enabled, the third
+    edge feature is ``min(max(-kappa_ij, 0), bmax) / bmax``.  The explicit edge
+    index remains useful for batching and graph-structure verification.
     """
     observations = tuple(observations)
     if not observations:
@@ -221,6 +224,9 @@ def encode_stage2_mpnn_observations(
     target_tx_ratio = _validate_probability("target_tx_ratio", target_tx_ratio, True)
     if not np.isfinite(neighbor_confidence_time_constant) or neighbor_confidence_time_constant <= 0.0:
         raise ValueError("neighbor_confidence_time_constant must be positive")
+    bmax = float(bmax)
+    if not np.isfinite(bmax) or bmax <= 0.0:
+        raise ValueError("bmax must be finite and positive")
 
     # Reuse legacy local formulas, then select only the five permitted self features.
     legacy = encode_observations(
@@ -252,11 +258,16 @@ def encode_stage2_mpnn_observations(
         for neighbor_index, sender_id in enumerate(observation.neighbor_ids):
             if int(sender_id) not in node_rows:
                 raise ValueError("every observed neighbor must be present in the observation batch")
-            is_valid = float(valid[neighbor_index])
             gain = (float(np.mean(own > estimates[neighbor_index])) if valid[neighbor_index] else 0.0)
             confidence = (float(np.exp(-ages[neighbor_index] / neighbor_confidence_time_constant))
                           if valid[neighbor_index] else 0.0)
-            feature = np.asarray([is_valid, gain, confidence], dtype=np.float32)
+            curvature = float(observation.incident_curvatures[int(sender_id)])
+            raw_bottleneck = max(-curvature, 0.0)
+            clipped_bottleneck = (
+                min(raw_bottleneck, bmax) / bmax if use_curvature_edge_feature else 0.0
+            )
+            # Keep all edge inputs on the same [0, 1] scale for the message MLP.
+            feature = np.asarray([gain, confidence, clipped_bottleneck], dtype=np.float32)
             if not np.isfinite(feature).all() or np.any(feature < 0.0) or np.any(feature > 1.0):
                 raise ValueError("MPNN edge features must be finite and in [0, 1]")
             senders.append(node_rows[int(sender_id)])

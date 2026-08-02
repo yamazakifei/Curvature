@@ -1,0 +1,111 @@
+{
+  "actor": {
+    "aggregated_message_dim": 32,
+    "aggregation": "mean_max",
+    "architecture_version": "curvature_stage2_mpnn_v1",
+    "bmax": 1.0,
+    "condition_message_on_receiver": true,
+    "curvature": {
+      "alpha_init": 1.5,
+      "alpha_override": 1.5,
+      "alpha_parameterization": "softplus",
+      "center": 0.4012991820118967,
+      "score": "incident_bottleneck_max"
+    },
+    "decoder_input_dim": 38,
+    "edge_input_dim": 3,
+    "edge_input_feature_names": [
+      "neighbor_freshness_gain",
+      "neighbor_estimate_confidence",
+      "clipped_bottleneck_score"
+    ],
+    "input_feature_names": [
+      "normalized_degree",
+      "time_since_last_tx",
+      "consecutive_tx_attempts",
+      "congestion_ewma",
+      "self_information_increment"
+    ],
+    "message_dim": 16,
+    "message_input_dim": 8,
+    "node_input_dim": 5,
+    "node_input_feature_names": [
+      "normalized_degree",
+      "time_since_last_tx",
+      "consecutive_tx_attempts",
+      "congestion_ewma",
+      "self_information_increment"
+    ],
+    "residual": {
+      "activation": "relu",
+      "architecture": "mpnn",
+      "delta_max": 1.0,
+      "detach_stage1_reference": true,
+      "enabled": true,
+      "freeze_stage1": true,
+      "hidden_dims": [
+        64,
+        64
+      ],
+      "include_curvature_freshness_interaction": false,
+      "include_curvature_mean": false,
+      "include_scenario_context": false,
+      "mpnn": {
+        "aggregation": "mean_max",
+        "bmax": 1.0,
+        "condition_message_on_receiver": true,
+        "message_dim": 16,
+        "message_hidden_dims": [
+          32
+        ],
+        "update_hidden_dims": [
+          64,
+          64
+        ],
+        "use_curvature_edge_feature": true,
+        "use_sender_node_features": false
+      },
+      "use_stage1_reference": true,
+      "zero_init_output": true
+    },
+    "residual_architecture": "mpnn",
+    "stage": 2,
+    "use_curvature_edge_feature": true,
+    "use_sender_node_features": false
+  },
+  "actor_learning_rate": 0.0005,
+  "best_train_mean_VAoI": 5.778049242496491,
+  "best_validation_mean_VAoI": 7.104376666666667,
+  "budget_relative_tolerance": 0.05,
+  "checkpoint": "result_GNN\\mpnnV2_heuristic_channel_n100_u0.20_b0.10_a1.5_newlr\\checkpoints\\best_validation\\model",
+  "checkpoint_every_episodes": 20,
+  "checkpoint_mode": "validation_best_only",
+  "consecutive_tx_scale": 3.0,
+  "critic_learning_rate": 0.001,
+  "episodes": 300,
+  "initial_checkpoint": null,
+  "initial_multiplier": 0.0,
+  "model_version": "curvature_stage2_mpnn_v1",
+  "multiplier_error_clip": 1.0,
+  "multiplier_learning_rate": 0.01,
+  "multiplier_max": 0.15,
+  "neighbor_confidence_time_constant": 20.0,
+  "node_counts": [
+    100
+  ],
+  "per_node_cap_multiplier": 1.5,
+  "restored_variables": [],
+  "target_tx_ratios": [
+    0.1
+  ],
+  "tx_ratio_ema_beta": 0.5,
+  "update_multiplier": false,
+  "update_probabilities": [
+    0.2
+  ],
+  "use_budget_advantage": false,
+  "validation_enabled": true,
+  "validation_every_episodes": 10,
+  "validation_trigger": "every_episodes",
+  "vaoi_reward_scale": 0.1
+}
