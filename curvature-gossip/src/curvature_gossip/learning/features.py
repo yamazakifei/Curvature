@@ -1,11 +1,13 @@
 """Encode strictly local V3 actor inputs and centralized critic inputs.
 
 The shared actor receives only data exposed by :class:`NodeObservation`; the
-centralized critic is used only during training.
+centralized critic is used only during training.  The node-conditioned critic
+encoder added here deliberately keeps its exact-state and channel features
+out of the actor observation path.
 """
 
 from dataclasses import dataclass
-from typing import Sequence, Tuple
+from typing import Mapping, Sequence, Tuple
 
 import numpy as np
 
@@ -71,6 +73,35 @@ STAGE2_MPNN_EDGE_FEATURE_NAMES = (
     "neighbor_freshness_gain", "neighbor_estimate_confidence", "clipped_bottleneck_score",
 )
 STAGE2_MPNN_NODE_CONTEXT_INDICES = (0, 1, 2, 3, 6)
+
+# Feature groups are explicit so checkpoint metadata can explain every critic
+# input and permutation tests can verify that no node identity is encoded.
+NODE_CRITIC_DYNAMIC_GLOBAL_FEATURE_NAMES = (
+    "global_mean_vaoi", "global_std_vaoi", "global_tail5_mean_vaoi", "last_tx_ratio",
+)
+NODE_CRITIC_SCENARIO_FEATURE_NAMES = (
+    "log_network_size", "update_probability", "target_tx_ratio",
+)
+NODE_CRITIC_LOCAL_FEATURE_NAMES = (
+    "normalized_degree", "time_since_last_tx", "consecutive_tx_attempts",
+    "congestion_ewma", "incident_bottleneck_max", "incident_bottleneck_mean",
+    "self_information_increment_fraction", "neighbor_confidence_mean",
+)
+NODE_CRITIC_EXACT_FEATURE_NAMES = (
+    "receiver_vaoi_mean", "receiver_vaoi_tail", "source_vaoi_mean",
+    "source_vaoi_tail", "exact_innovation_fraction_mean",
+    "exact_innovation_fraction_max", "exact_innovation_magnitude_mean",
+    "exact_bottleneck_weighted_innovation",
+)
+NODE_CRITIC_CHANNEL_FEATURE_NAMES = ("mean_link_margin", "weak_link_margin")
+
+
+@dataclass(frozen=True)
+class EncodedNodeCriticInputs:
+    """Training-only node critic inputs with shape ``[N, D]``."""
+
+    critic_inputs: np.ndarray
+    feature_names: Tuple[str, ...]
 
 
 def _validate_probability(name: str, value: float, strict_lower: bool = False) -> float:
@@ -375,3 +406,168 @@ def encode_global_state(
         np.log1p(state[0]), np.log1p(state[1]), np.log1p(state[2]), np.log1p(state[3]),
         last_tx_ratio, np.log1p(int(n_nodes)), update_probability, target_tx_ratio,
     ], dtype=np.float32)
+
+
+def node_critic_feature_names(
+    include_scenario_context: bool = True,
+    include_exact_node_features: bool = True,
+    include_channel_features: bool = True,
+) -> Tuple[str, ...]:
+    """Return the stable concatenation order for node-conditioned Critic inputs."""
+    names = list(NODE_CRITIC_DYNAMIC_GLOBAL_FEATURE_NAMES)
+    if include_scenario_context:
+        names.extend(NODE_CRITIC_SCENARIO_FEATURE_NAMES)
+    names.extend(NODE_CRITIC_LOCAL_FEATURE_NAMES)
+    if include_exact_node_features:
+        names.extend(NODE_CRITIC_EXACT_FEATURE_NAMES)
+    if include_channel_features:
+        names.extend(NODE_CRITIC_CHANNEL_FEATURE_NAMES)
+    return tuple(names)
+
+
+def _tail5mean(values: np.ndarray) -> float:
+    """Return the mean of the largest five percent, retaining at least one item."""
+    values = np.asarray(values, dtype=np.float32).reshape(-1)
+    if values.size == 0:
+        return 0.0
+    count = max(1, int(np.ceil(0.05 * values.size)))
+    return float(np.mean(np.partition(values, values.size - count)[-count:]))
+
+
+def _log_age_stats(version_age: np.ndarray) -> Tuple[float, float, float]:
+    """Summarize off-diagonal version age without max/p95 redundancy."""
+    ages = np.asarray(version_age, dtype=np.float32)
+    if ages.ndim != 2 or ages.shape[0] != ages.shape[1] or ages.shape[0] < 2:
+        raise ValueError("version_age must be a square matrix with at least two nodes")
+    off_diagonal = ages[~np.eye(ages.shape[0], dtype=bool)]
+    if np.any(~np.isfinite(off_diagonal)) or np.any(off_diagonal < 0.0):
+        raise ValueError("version_age must be finite and nonnegative")
+    return (
+        float(np.log1p(np.mean(off_diagonal))),
+        float(np.log1p(np.std(off_diagonal))),
+        float(np.log1p(_tail5mean(off_diagonal))),
+    )
+
+
+def encode_node_critic_inputs(
+    observations: Sequence[NodeObservation],
+    version_age: np.ndarray,
+    last_tx_ratio: float,
+    target_tx_ratio: float,
+    update_probability: float,
+    n_nodes: int,
+    mean_rx_power_mw: np.ndarray = None,
+    noise_power_mw: float = None,
+    sinr_threshold_db: float = None,
+    include_scenario_context: bool = True,
+    include_exact_node_features: bool = True,
+    include_channel_features: bool = True,
+    consecutive_tx_scale: float = 3.0,
+    neighbor_confidence_time_constant: float = 20.0,
+    congestion_feature_scale: float = 5.0,
+) -> EncodedNodeCriticInputs:
+    """Build permutation-equivariant, training-only ``[N, D]`` Critic inputs.
+
+    ``version_age`` and ``mean_rx_power_mw`` are centralized training data.
+    The local feature block is recomputed from immutable observations and is
+    never passed to the distributed actor through ``NodeObservation``.
+    """
+    observations = tuple(observations)
+    if not observations:
+        raise ValueError("at least one node observation is required")
+    n_nodes = int(n_nodes)
+    if n_nodes != len(observations) or n_nodes < 2:
+        raise ValueError("n_nodes must match observations and be at least two")
+    target_tx_ratio = _validate_probability("target_tx_ratio", target_tx_ratio, True)
+    update_probability = _validate_probability("update_probability", update_probability)
+    last_tx_ratio = _validate_probability("last_tx_ratio", last_tx_ratio)
+    ages = np.asarray(version_age, dtype=np.float32)
+    if ages.shape != (n_nodes, n_nodes):
+        raise ValueError("version_age must have shape [N, N]")
+    node_ids = [int(item.node_id) for item in observations]
+    if sorted(node_ids) != list(range(n_nodes)):
+        raise ValueError("node critic observations must contain node ids 0..N-1")
+    observations_by_id = {int(item.node_id): item for item in observations}
+
+    # Dynamic global context is replicated for every node; this is not a node ID.
+    mean_age, std_age, tail_age = _log_age_stats(ages)
+    dynamic = np.asarray([mean_age, std_age, tail_age, last_tx_ratio], dtype=np.float32)
+    scenario = np.asarray(
+        [np.log1p(n_nodes), update_probability, target_tx_ratio], dtype=np.float32
+    )
+    local_actor_features = encode_observations(
+        observations, target_tx_ratio, update_probability, consecutive_tx_scale,
+        neighbor_confidence_time_constant, congestion_feature_scale,
+    ).node_features.astype(np.float32, copy=False)
+    # Keep only Actor-visible state that is not a duplicate of exact innovation.
+    local = local_actor_features[:, (0, 1, 2, 3, 4, 5, 6, 10)]
+
+    exact = np.zeros((n_nodes, 8), dtype=np.float32)
+    for row, observation in enumerate(observations):
+        node = int(observation.node_id)
+        row_values = np.delete(ages[node], node)
+        column_values = np.delete(ages[:, node], node)
+        own = np.asarray(observation.own_cache_versions, dtype=np.float32)
+        innovations = []
+        for neighbor in observation.neighbor_ids:
+            neighbor = int(neighbor)
+            neighbor_own = np.asarray(observations_by_id[neighbor].own_cache_versions, dtype=np.float32)
+            difference = np.maximum(own - neighbor_own, 0.0)
+            innovations.append((
+                float(np.mean(difference > 0.0)),
+                float(np.mean(difference)),
+                float(observation.incident_bottleneck_importance[neighbor]),
+            ))
+        degree = len(innovations)
+        innovation_fractions = [item[0] for item in innovations]
+        innovation_magnitudes = [item[1] for item in innovations]
+        innovation_fraction = float(np.mean(innovation_fractions)) if degree else 0.0
+        innovation_fraction_max = float(np.max(innovation_fractions)) if degree else 0.0
+        innovation_magnitude = float(np.mean(innovation_magnitudes)) if degree else 0.0
+        bottleneck_weights = np.asarray([item[2] for item in innovations], dtype=np.float32)
+        weighted_innovation = (
+            float(np.dot(bottleneck_weights, innovation_fractions)
+                  / (float(np.sum(bottleneck_weights)) + 1e-8))
+            if degree else 0.0
+        )
+        exact[row] = np.asarray([
+            np.log1p(np.mean(row_values)), np.log1p(_tail5mean(row_values)),
+            np.log1p(np.mean(column_values)), np.log1p(_tail5mean(column_values)),
+            innovation_fraction, innovation_fraction_max,
+            np.log1p(innovation_magnitude), weighted_innovation,
+        ], dtype=np.float32)
+
+    channel = np.zeros((n_nodes, 2), dtype=np.float32)
+    if include_channel_features:
+        power = np.asarray(mean_rx_power_mw, dtype=np.float64)
+        if power.shape != (n_nodes, n_nodes) or noise_power_mw is None or sinr_threshold_db is None:
+            raise ValueError("channel features require mean_rx_power_mw and channel parameters")
+        if not np.isfinite(power).all() or np.any(power < 0.0) or noise_power_mw <= 0.0:
+            raise ValueError("mean receive power and noise must be finite and positive")
+        for row, observation in enumerate(observations):
+            node = int(observation.node_id)
+            margins = []
+            for neighbor in observation.neighbor_ids:
+                received = max(float(power[node, int(neighbor)]), np.finfo(float).tiny)
+                margin = 10.0 * np.log10(received / float(noise_power_mw)) - float(sinr_threshold_db)
+                margins.append(margin)
+            if margins:
+                channel[row] = np.asarray([
+                    np.tanh(np.mean(margins) / 10.0), np.tanh(np.percentile(margins, 10) / 10.0)
+                ], dtype=np.float32)
+
+    blocks = [np.repeat(dynamic[None, :], n_nodes, axis=0)]
+    if include_scenario_context:
+        blocks.append(np.repeat(scenario[None, :], n_nodes, axis=0))
+    blocks.append(local)
+    if include_exact_node_features:
+        blocks.append(exact)
+    if include_channel_features:
+        blocks.append(channel)
+    encoded = np.concatenate(blocks, axis=1).astype(np.float32, copy=False)
+    names = node_critic_feature_names(
+        include_scenario_context, include_exact_node_features, include_channel_features
+    )
+    if encoded.shape != (n_nodes, len(names)) or not np.isfinite(encoded).all():
+        raise ValueError("node critic inputs must be finite and match configured feature names")
+    return EncodedNodeCriticInputs(critic_inputs=encoded, feature_names=names)

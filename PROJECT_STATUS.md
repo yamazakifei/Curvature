@@ -1,5 +1,41 @@
 # Curvature-Gossip Project Status
 
+## Stage-2 residual common-mode stabilization (2026-08-02)
+
+Stage-2 residual training now supports `training.common_mode_coefficient`.
+The penalty uses TensorFlow unsorted-segment means grouped by rollout time
+step, so residuals from different slots or episodes cannot cancel each other.
+It is applied only in the centralized training loss; Actor inference remains
+strictly local and does not require `step_ids`.  The Stage-2 MLP and MPNN
+`delta_logit` output layers are bias-free, while all intermediate layer biases
+remain unchanged.  Training history records common-mode loss, residual sign
+and saturation statistics, and PPO/common/total Actor gradient norms.
+
+## Node-conditioned Critic deduplication for MPNN V3 (2026-08-02)
+
+The new `configs/GNN/mpnn_newC_heuristic_channel.yaml` keeps the existing
+heuristic physical channel and Stage-2 MPNN Actor, while selecting the new
+training-only `node_conditioned` Critic.  It outputs one value per node and
+uses the revised 25-dimensional feature layout from the design: four dynamic
+global features, three scenario features, eight retained Actor-visible node
+features, eight exact version-age/cache and innovation features, and two
+static mean-channel features.  The Actor still retains its local freshness
+estimates; only the three duplicated freshness estimates are removed from the
+Critic, while `neighbor_confidence_mean` remains.
+
+Training computes `[T,N]` node GAE targets, normalizes VAoI advantages
+over the flattened `[T*N]` rollout, and bootstraps the final rollout state.
+The legacy `scalar_global` Critic remains the default for old configurations;
+node Critic inputs are never required by Actor inference or fixed validation.
+Training diagnostics and `model_metadata.json` record the Critic architecture,
+input dimension, value dispersion, bootstrap statistics, and explained
+variance.  The requested full run command is:
+
+```powershell
+cd D:\ZMF\2026Curvature\curvature-gossip
+conda run --no-capture-output -n GRL_AoI_cpu37 python scripts/train_nn_ctde.py --config configs/GNN/mpnn_newC_heuristic_channel.yaml
+```
+
 ## Independent Actor/Critic learning rates (2026-07-31)
 
 CTDE-PPO now accepts `training.actor_learning_rate` and

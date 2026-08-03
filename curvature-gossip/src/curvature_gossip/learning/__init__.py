@@ -6,6 +6,12 @@ from .features import (
     EncodedObservations,
     Stage2EncodedObservations,
     Stage2MPNNEncodedObservations,
+    EncodedNodeCriticInputs,
+    NODE_CRITIC_DYNAMIC_GLOBAL_FEATURE_NAMES,
+    NODE_CRITIC_SCENARIO_FEATURE_NAMES,
+    NODE_CRITIC_LOCAL_FEATURE_NAMES,
+    NODE_CRITIC_EXACT_FEATURE_NAMES,
+    NODE_CRITIC_CHANNEL_FEATURE_NAMES,
     STAGE2_MPNN_NODE_FEATURE_NAMES,
     STAGE2_MPNN_EDGE_FEATURE_NAMES,
     encode_global_state,
@@ -15,6 +21,8 @@ from .features import (
     encode_stage2_context,
     encode_stage2_observations,
     encode_stage2_mpnn_observations,
+    encode_node_critic_inputs,
+    node_critic_feature_names,
     stage2_context_feature_names,
 )
 
@@ -27,5 +35,9 @@ __all__ = [
     "Stage2EncodedObservations", "encode_stage2_context", "encode_stage2_observations",
     "Stage2MPNNEncodedObservations", "STAGE2_MPNN_NODE_FEATURE_NAMES",
     "STAGE2_MPNN_EDGE_FEATURE_NAMES", "encode_stage2_mpnn_observations",
-    "stage2_context_feature_names",
+    "stage2_context_feature_names", "EncodedNodeCriticInputs",
+    "NODE_CRITIC_DYNAMIC_GLOBAL_FEATURE_NAMES", "NODE_CRITIC_SCENARIO_FEATURE_NAMES",
+    "NODE_CRITIC_LOCAL_FEATURE_NAMES", "NODE_CRITIC_EXACT_FEATURE_NAMES",
+    "NODE_CRITIC_CHANNEL_FEATURE_NAMES", "encode_node_critic_inputs",
+    "node_critic_feature_names",
 ]

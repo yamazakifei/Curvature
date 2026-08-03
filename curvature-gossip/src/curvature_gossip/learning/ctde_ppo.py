@@ -10,7 +10,7 @@ from typing import Mapping
 
 import numpy as np
 
-from .features import GLOBAL_STATE_DIM, NODE_FEATURE_DIM
+from .features import GLOBAL_STATE_DIM, NODE_FEATURE_DIM, node_critic_feature_names
 
 
 def resolve_learning_rates(training_config: Mapping, default: float = 3e-4):
@@ -32,7 +32,8 @@ class CTDEPPO:
 
     def __init__(self, learning_rate=3e-4, clip_ratio=0.2, entropy_coefficient=0.01,
                  seed=0, session_config=None, actor_config=None,
-                 actor_learning_rate=None, critic_learning_rate=None) -> None:
+                 critic_config=None, actor_learning_rate=None, critic_learning_rate=None,
+                 common_mode_coefficient=0.0) -> None:
         import tensorflow as tensorflow
 
         # Keep the original shared argument while allowing either optimizer to override it.
@@ -47,7 +48,35 @@ class CTDEPPO:
                             ("critic_learning_rate", self.critic_learning_rate)):
             if not np.isfinite(value) or value <= 0.0:
                 raise ValueError("{} must be finite and positive".format(name))
+        self.common_mode_coefficient = float(common_mode_coefficient)
+        if not np.isfinite(self.common_mode_coefficient) or self.common_mode_coefficient < 0.0:
+            raise ValueError("common_mode_coefficient must be finite and nonnegative")
         self.actor_config = dict(actor_config or {})
+        self.critic_config = dict(critic_config or {})
+        self.critic_architecture = str(self.critic_config.get("architecture", "scalar_global"))
+        if self.critic_architecture not in ("scalar_global", "node_conditioned"):
+            raise ValueError("critic.architecture must be scalar_global or node_conditioned")
+        if self.critic_architecture == "node_conditioned":
+            self.critic_include_scenario_context = bool(
+                self.critic_config.get("include_scenario_context", True)
+            )
+            self.critic_include_exact_node_features = bool(
+                self.critic_config.get("include_exact_node_features", True)
+            )
+            self.critic_include_channel_features = bool(
+                self.critic_config.get("include_channel_features", True)
+            )
+            self.critic_feature_names = node_critic_feature_names(
+                self.critic_include_scenario_context,
+                self.critic_include_exact_node_features,
+                self.critic_include_channel_features,
+            )
+            self.critic_input_dim = int(self.critic_config.get("input_dim", len(self.critic_feature_names)))
+            if self.critic_input_dim != len(self.critic_feature_names):
+                raise ValueError("critic.input_dim does not match the configured feature groups")
+        else:
+            self.critic_feature_names = tuple("legacy_global_{}".format(i) for i in range(GLOBAL_STATE_DIM))
+            self.critic_input_dim = GLOBAL_STATE_DIM
         self.actor_stage = int(self.actor_config.get("stage", 0))
         if self.actor_stage not in (0, 1, 2):
             raise ValueError("CTDEPPO supports legacy stage 0, Stage 1, or Stage 2 actors")
@@ -58,7 +87,7 @@ class CTDEPPO:
             self.tf.set_random_seed(int(seed))
             self._build_graph(
                 self.actor_learning_rate, self.critic_learning_rate,
-                float(clip_ratio), float(entropy_coefficient),
+                float(clip_ratio), float(entropy_coefficient), self.common_mode_coefficient,
             )
             self.saver = self.tf.train.Saver(max_to_keep=None)
             self.init_op = self.tf.global_variables_initializer()
@@ -140,7 +169,7 @@ class CTDEPPO:
                 hidden = tf.layers.dense(self.residual_input, 64, activation=tf.nn.relu, name="dense_1")
                 hidden = tf.layers.dense(hidden, 64, activation=tf.nn.relu, name="dense_2")
                 residual_raw = tf.squeeze(tf.layers.dense(
-                    hidden, 1, kernel_initializer=tf.zeros_initializer(), bias_initializer=tf.zeros_initializer(),
+                    hidden, 1, use_bias=False, kernel_initializer=tf.zeros_initializer(),
                     name="delta_logit",
                 ), axis=1)
             self.residual_delta = tf.identity(delta_max * tf.tanh(residual_raw), name="residual_delta")
@@ -216,14 +245,17 @@ class CTDEPPO:
             hidden = tf.layers.dense(self.residual_input, 64, activation=tf.nn.relu, name="dense_1")
             hidden = tf.layers.dense(hidden, 64, activation=tf.nn.relu, name="dense_2")
             residual_raw = tf.squeeze(tf.layers.dense(
-                hidden, 1, kernel_initializer=tf.zeros_initializer(), bias_initializer=tf.zeros_initializer(),
+                hidden, 1, use_bias=False, kernel_initializer=tf.zeros_initializer(),
                 name="delta_logit",
             ), axis=1)
         self.residual_delta = tf.identity(delta_max * tf.tanh(residual_raw), name="residual_delta")
         self.logits = tf.identity(self.base_logits + self.residual_delta, name="final_logits")
         self.probabilities = tf.nn.sigmoid(self.logits, name="transmission_probability")
 
-    def _build_graph(self, actor_learning_rate, critic_learning_rate, clip_ratio, entropy_coefficient):
+    def _build_graph(
+        self, actor_learning_rate, critic_learning_rate, clip_ratio,
+        entropy_coefficient, common_mode_coefficient,
+    ):
         tf = self.tf
         self.actions = tf.placeholder(tf.float32, [None], name="actions")
         self.old_log_probabilities = tf.placeholder(tf.float32, [None], name="old_log_probabilities")
@@ -235,20 +267,53 @@ class CTDEPPO:
         clipped = tf.clip_by_value(ratio, 1.0 - clip_ratio, 1.0 + clip_ratio)
         self.surrogate_actor_loss = -tf.reduce_mean(tf.minimum(ratio * self.advantages, clipped * self.advantages))
         self.mean_entropy = tf.reduce_mean(distribution.entropy())
-        self.actor_loss = self.surrogate_actor_loss - entropy_coefficient * self.mean_entropy
+        self.common_mode_loss = tf.constant(0.0, dtype=tf.float32, name="common_mode_loss")
+        self.actor_step_ids = None
+        self.number_of_steps = None
+        if self.actor_stage == 2:
+            # These placeholders exist only for the training update; inference never feeds them.
+            self.actor_step_ids = tf.placeholder(tf.int32, [None], name="actor_step_ids")
+            self.number_of_steps = tf.placeholder(tf.int32, shape=(), name="number_of_steps")
+            residual_sum = tf.math.unsorted_segment_sum(
+                self.residual_delta, self.actor_step_ids, self.number_of_steps
+            )
+            residual_count = tf.math.unsorted_segment_sum(
+                tf.ones_like(self.residual_delta), self.actor_step_ids, self.number_of_steps
+            )
+            residual_mean = residual_sum / tf.maximum(residual_count, 1.0)
+            self.common_mode_loss = tf.identity(
+                tf.reduce_mean(tf.square(residual_mean)), name="common_mode_loss"
+            )
+        self.actor_loss = (
+            self.surrogate_actor_loss
+            - entropy_coefficient * self.mean_entropy
+            + common_mode_coefficient * self.common_mode_loss
+        )
         self.approx_kl = tf.reduce_mean(self.old_log_probabilities - self.log_probabilities)
         self.clip_fraction = tf.reduce_mean(tf.cast(tf.abs(ratio - 1.0) > clip_ratio, tf.float32))
 
-        self.global_states = tf.placeholder(tf.float32, [None, GLOBAL_STATE_DIM], name="global_states")
+        if self.critic_architecture == "node_conditioned":
+            # Node values are flattened time-major by the trainer, matching actor samples.
+            self.critic_inputs = tf.placeholder(
+                tf.float32, [None, self.critic_input_dim], name="critic_inputs"
+            )
+            critic_source = self.critic_inputs
+        else:
+            self.global_states = tf.placeholder(tf.float32, [None, GLOBAL_STATE_DIM], name="global_states")
+            critic_source = self.global_states
         self.returns = tf.placeholder(tf.float32, [None], name="returns")
         with tf.variable_scope("critic"):
-            hidden = tf.layers.dense(self.global_states, 64, activation=tf.nn.relu, name="dense_1")
+            hidden = tf.layers.dense(critic_source, 64, activation=tf.nn.relu, name="dense_1")
             hidden = tf.layers.dense(hidden, 64, activation=tf.nn.relu, name="dense_2")
             self.values = tf.squeeze(tf.layers.dense(hidden, 1, name="value"), axis=1)
         self.critic_loss = tf.reduce_mean(tf.square(self.returns - self.values))
         actor_variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope="actor")
         gradients = tf.gradients(self.surrogate_actor_loss, actor_variables)
         self.policy_gradient_norm_op = tf.global_norm([item for item in gradients if item is not None])
+        common_gradients = tf.gradients(common_mode_coefficient * self.common_mode_loss, actor_variables)
+        self.common_mode_gradient_norm_op = tf.global_norm([item for item in common_gradients if item is not None])
+        total_gradients = tf.gradients(self.actor_loss, actor_variables)
+        self.total_actor_gradient_norm_op = tf.global_norm([item for item in total_gradients if item is not None])
         critic_variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope="critic")
         if self.actor_stage == 1:
             actor_update_variables = [] if self.alpha_override_active else actor_variables
@@ -277,6 +342,14 @@ class CTDEPPO:
         return {self.node_features: encoded.node_features}
 
     def actor_batch_inputs(self, encoded_steps):
+        step_ids = np.concatenate([
+            np.full(
+                (item.curvature_scores if self.actor_stage in (1, 2) else item.node_features).shape[0],
+                index, dtype=np.int32,
+            )
+            for index, item in enumerate(encoded_steps)
+        ]) if encoded_steps else np.empty((0,), dtype=np.int32)
+        number_of_steps = len(encoded_steps)
         if self.actor_stage == 2:
             if self.residual_architecture == "mpnn":
                 node_counts = [item.node_context.shape[0] for item in encoded_steps]
@@ -286,10 +359,12 @@ class CTDEPPO:
                         "target_tx_ratios": np.concatenate([item.target_tx_ratios for item in encoded_steps]),
                         "node_context": np.concatenate([item.node_context for item in encoded_steps]),
                         "edge_index": np.concatenate(edge_indices, axis=1).astype(np.int32, copy=False),
-                        "edge_features": np.concatenate([item.edge_features for item in encoded_steps]).astype(np.float32, copy=False)}
+                        "edge_features": np.concatenate([item.edge_features for item in encoded_steps]).astype(np.float32, copy=False),
+                        "step_ids": step_ids, "number_of_steps": number_of_steps}
             return {"curvature_scores": np.concatenate([item.curvature_scores for item in encoded_steps]),
                     "target_tx_ratios": np.concatenate([item.target_tx_ratios for item in encoded_steps]),
-                    "residual_context": np.concatenate([item.residual_context for item in encoded_steps])}
+                    "residual_context": np.concatenate([item.residual_context for item in encoded_steps]),
+                    "step_ids": step_ids, "number_of_steps": number_of_steps}
         if self.actor_stage == 1:
             return {"curvature_scores": np.concatenate([item.curvature_scores for item in encoded_steps]),
                     "target_tx_ratios": np.concatenate([item.target_tx_ratios for item in encoded_steps])}
@@ -326,7 +401,11 @@ class CTDEPPO:
         return actions, probabilities, log_probabilities.astype(np.float32)
 
     def value(self, global_states):
-        states = np.asarray(global_states, dtype=np.float32).reshape(-1, GLOBAL_STATE_DIM)
+        states = np.asarray(global_states, dtype=np.float32)
+        if self.critic_architecture == "node_conditioned":
+            states = states.reshape(-1, self.critic_input_dim)
+            return self.session.run(self.values, feed_dict={self.critic_inputs: states})
+        states = states.reshape(-1, GLOBAL_STATE_DIM)
         return self.session.run(self.values, feed_dict={self.global_states: states})
 
     def update(self, actor_batch: Mapping, critic_batch: Mapping, epochs=4):
@@ -336,17 +415,53 @@ class CTDEPPO:
             self.old_log_probabilities: actor_batch["old_log_probabilities"],
             self.advantages: actor_batch["advantages"],
         })
-        critic_feed = {self.global_states: critic_batch["global_states"], self.returns: critic_batch["returns"]}
+        if self.actor_stage == 2:
+            actor_feed.update({
+                self.actor_step_ids: actor_batch["step_ids"],
+                self.number_of_steps: actor_batch["number_of_steps"],
+            })
+        if self.critic_architecture == "node_conditioned":
+            critic_feed = {
+                self.critic_inputs: critic_batch["critic_inputs"],
+                self.returns: critic_batch["returns"],
+            }
+        else:
+            critic_feed = {
+                self.global_states: critic_batch["global_states"],
+                self.returns: critic_batch["returns"],
+            }
         for _ in range(int(epochs)):
-            actor_loss, entropy, approx_kl, clip_fraction, _ = self.session.run(
-                [self.actor_loss, self.mean_entropy, self.approx_kl, self.clip_fraction, self.actor_train_op], feed_dict=actor_feed)
+            actor_loss, entropy, approx_kl, clip_fraction, common_loss, _ = self.session.run(
+                [self.actor_loss, self.mean_entropy, self.approx_kl, self.clip_fraction,
+                 self.common_mode_loss, self.actor_train_op], feed_dict=actor_feed)
             critic_loss, _ = self.session.run([self.critic_loss, self.critic_train_op], feed_dict=critic_feed)
-        return {"actor_loss": float(actor_loss), "critic_loss": float(critic_loss), "entropy": float(entropy), "approx_kl": float(approx_kl), "clip_fraction": float(clip_fraction)}
+        return {"actor_loss": float(actor_loss), "critic_loss": float(critic_loss), "entropy": float(entropy),
+                "approx_kl": float(approx_kl), "clip_fraction": float(clip_fraction),
+                "common_mode_loss": float(common_loss)}
 
     def policy_gradient_norm(self, actor_batch: Mapping) -> float:
         feed = self._actor_batch_feed(actor_batch)
         feed.update({self.actions: actor_batch["actions"], self.old_log_probabilities: actor_batch["old_log_probabilities"], self.advantages: actor_batch["advantages"]})
         return float(self.session.run(self.policy_gradient_norm_op, feed_dict=feed))
+
+    def common_mode_gradient_norm(self, actor_batch: Mapping) -> float:
+        """Return the gradient norm contributed by the configured common-mode term."""
+        if self.actor_stage != 2:
+            return 0.0
+        feed = self._actor_batch_feed(actor_batch)
+        feed.update({self.actions: actor_batch["actions"], self.old_log_probabilities: actor_batch["old_log_probabilities"],
+                     self.advantages: actor_batch["advantages"], self.actor_step_ids: actor_batch["step_ids"],
+                     self.number_of_steps: actor_batch["number_of_steps"]})
+        return float(self.session.run(self.common_mode_gradient_norm_op, feed_dict=feed))
+
+    def total_actor_gradient_norm(self, actor_batch: Mapping) -> float:
+        """Return the gradient norm of the complete Actor loss."""
+        feed = self._actor_batch_feed(actor_batch)
+        feed.update({self.actions: actor_batch["actions"], self.old_log_probabilities: actor_batch["old_log_probabilities"],
+                     self.advantages: actor_batch["advantages"]})
+        if self.actor_stage == 2:
+            feed.update({self.actor_step_ids: actor_batch["step_ids"], self.number_of_steps: actor_batch["number_of_steps"]})
+        return float(self.session.run(self.total_actor_gradient_norm_op, feed_dict=feed))
 
     def stage1_diagnostics(self, encoded):
         """Return alpha and q-base values for Stage-1 training logs and tests."""
@@ -398,6 +513,22 @@ class CTDEPPO:
         }
         if not matched:
             raise ValueError("checkpoint has no variables compatible with the current model")
+        self.tf.train.Saver(var_list=matched).restore(self.session, str(checkpoint_prefix))
+        return tuple(sorted(matched))
+
+    def restore_actor_only(self, checkpoint_prefix):
+        """Restore only ``actor/*`` variables, leaving the new Critic random-initialized."""
+        reader = self.tf.train.NewCheckpointReader(str(checkpoint_prefix))
+        available = reader.get_variable_to_shape_map()
+        with self.graph.as_default():
+            variables = self.tf.get_collection(self.tf.GraphKeys.TRAINABLE_VARIABLES, scope="actor")
+        matched = {
+            variable.name.split(":")[0]: variable for variable in variables
+            if variable.name.split(":")[0] in available
+            and tuple(variable.shape.as_list()) == tuple(available[variable.name.split(":")[0]])
+        }
+        if not matched:
+            raise ValueError("checkpoint has no compatible actor variables")
         self.tf.train.Saver(var_list=matched).restore(self.session, str(checkpoint_prefix))
         return tuple(sorted(matched))
 

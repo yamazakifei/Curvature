@@ -25,6 +25,7 @@ from .ctde_ppo import CTDEPPO, resolve_learning_rates
 from .features import (
     encode_curvature_score, encode_global_state, encode_observations,
     encode_stage1_observations, encode_stage2_observations, encode_stage2_mpnn_observations,
+    encode_node_critic_inputs, node_critic_feature_names,
     stage2_context_feature_names, STAGE2_MPNN_NODE_FEATURE_NAMES, STAGE2_MPNN_EDGE_FEATURE_NAMES,
 )
 from .validation import evaluate_fixed_validation, probability_statistics, validation_scenarios
@@ -92,6 +93,27 @@ def _gae(rewards, values, gamma: float, gae_lambda: float):
         next_value = values[index + 1] if index + 1 < values.size else 0.0
         delta = rewards[index] + gamma * next_value - values[index]
         accumulator = delta + gamma * gae_lambda * accumulator
+        advantages[index] = accumulator
+    return advantages, advantages + values
+
+
+def _node_gae(rewards, values, bootstrap_values, gamma: float, gae_lambda: float):
+    """Compute node-wise GAE with a real next-decision-state bootstrap."""
+    rewards = np.asarray(rewards, dtype=np.float32)
+    values = np.asarray(values, dtype=np.float32)
+    bootstrap_values = np.asarray(bootstrap_values, dtype=np.float32)
+    if rewards.ndim != 1 or values.ndim != 2 or bootstrap_values.ndim != 1:
+        raise ValueError("node GAE expects rewards [T], values [T,N], bootstrap [N]")
+    if values.shape[0] != rewards.shape[0] or bootstrap_values.shape != (values.shape[1],):
+        raise ValueError("node GAE shapes must align across time and nodes")
+    if not np.isfinite(rewards).all() or not np.isfinite(values).all() or not np.isfinite(bootstrap_values).all():
+        raise ValueError("node GAE inputs must be finite")
+    advantages = np.zeros_like(values, dtype=np.float32)
+    accumulator = np.zeros(values.shape[1], dtype=np.float32)
+    for index in range(values.shape[0] - 1, -1, -1):
+        next_value = bootstrap_values if index == values.shape[0] - 1 else values[index + 1]
+        delta = rewards[index] + float(gamma) * next_value - values[index]
+        accumulator = delta + float(gamma) * float(gae_lambda) * accumulator
         advantages[index] = accumulator
     return advantages, advantages + values
 
@@ -300,11 +322,48 @@ def _freeze_stage1_center(raw: Mapping, actor: Mapping) -> float:
     return float(np.mean(values))
 
 
+def _critic_config(raw: Mapping) -> Mapping:
+    """Resolve Critic architecture and checkpointed feature metadata from YAML."""
+    critic = dict(raw.get("critic", {}))
+    architecture = str(critic.get("architecture", "scalar_global"))
+    if architecture == "scalar_global":
+        critic.update({"architecture": architecture, "input_dim": 8})
+        return critic
+    if architecture != "node_conditioned":
+        raise ValueError("critic.architecture must be scalar_global or node_conditioned")
+    include_scenario = bool(critic.get("include_scenario_context", True))
+    include_exact = bool(critic.get("include_exact_node_features", True))
+    include_channel = bool(critic.get("include_channel_features", True))
+    hidden_dims = list(critic.get("hidden_dims", [64, 64]))
+    if hidden_dims != [64, 64] or critic.get("activation", "relu") != "relu":
+        raise ValueError("node-conditioned Critic requires hidden_dims=[64, 64] and relu activation")
+    names = node_critic_feature_names(include_scenario, include_exact, include_channel)
+    configured_dim = int(critic.get("input_dim", len(names)))
+    if configured_dim != len(names):
+        raise ValueError("critic.input_dim does not match the enabled feature groups")
+    critic.update({
+        "architecture": architecture,
+        "hidden_dims": hidden_dims,
+        "activation": "relu",
+        "include_scenario_context": include_scenario,
+        "include_exact_node_features": include_exact,
+        "include_channel_features": include_channel,
+        "advantage_mode": str(critic.get("advantage_mode", "node_gae")),
+        "bootstrap_rollout_end": bool(critic.get("bootstrap_rollout_end", True)),
+        "input_dim": configured_dim,
+        "input_feature_names": list(names),
+    })
+    if critic["advantage_mode"] != "node_gae" or not critic["bootstrap_rollout_end"]:
+        raise ValueError("node-conditioned Critic requires node_gae and rollout-end bootstrap")
+    return critic
+
+
 def train_ctde(config_path: str):
     """Train and save a V3 checkpoint, metadata, and per-rollout diagnostics."""
     config = load_config(config_path)
     raw = config.raw
     actor_config = _stage1_actor_config(raw)
+    critic_config = _critic_config(raw)
     if int(actor_config.get("stage", 0)) in (1, 2):
         frozen_center = _freeze_stage1_center(raw, actor_config)
         actor_config = dict(actor_config)
@@ -325,6 +384,9 @@ def train_ctde(config_path: str):
     initial_multiplier = float(training.get("initial_multiplier", 0.0))
     multiplier_learning_rate = float(training.get("multiplier_learning_rate", 0.01))
     actor_learning_rate, critic_learning_rate = resolve_learning_rates(training)
+    common_mode_coefficient = float(training.get("common_mode_coefficient", 0.0))
+    if not np.isfinite(common_mode_coefficient) or common_mode_coefficient < 0.0:
+        raise ValueError("training.common_mode_coefficient must be finite and nonnegative")
     multiplier_max = float(training.get("multiplier_max", 0.15))
     tx_ratio_ema_beta = float(training.get("tx_ratio_ema_beta", 0.9))
     relative_tolerance = float(training.get("budget_relative_tolerance", 0.05))
@@ -363,12 +425,17 @@ def train_ctde(config_path: str):
         critic_learning_rate=critic_learning_rate,
         clip_ratio=float(training.get("clip_ratio", 0.2)),
         entropy_coefficient=float(training.get("entropy_coefficient", 0.01)),
-        seed=seed, actor_config=actor_config,
+        seed=seed, actor_config=actor_config, critic_config=critic_config,
+        common_mode_coefficient=common_mode_coefficient,
     )
     initial_checkpoint = training.get("initial_checkpoint")
     restored_variables = ()
     if initial_checkpoint:
-        restored_variables = model.restore_compatible(str(initial_checkpoint))
+        restored_variables = (
+            model.restore_actor_only(str(initial_checkpoint))
+            if bool(training.get("restore_actor_only", False))
+            else model.restore_compatible(str(initial_checkpoint))
+        )
     action_rng = np.random.default_rng(seed + 7919)
     targets = [float(value) for value in training.get("target_tx_ratios", [constraints.get("target_tx_ratio", 0.1)])]
     node_counts = list(training.get("node_counts", [None])) or [None]
@@ -426,7 +493,9 @@ def train_ctde(config_path: str):
             multiplier_used = constraint_state[case_key]["multiplier"]
             encoded_steps, actions_steps, probability_steps, old_log_steps = [], [], [], []
             base_probability_steps, residual_delta_steps = [], []
-            value_steps, global_states, vaoi_rewards, costs, vaoi_values = [], [], [], [], []
+            value_steps, critic_inputs_steps, global_states = [], [], []
+            vaoi_rewards, costs, vaoi_values = [], [], []
+            bootstrap_values = None
             last_tx_ratio = 0.0
             for slot in range(simulator.parameters.slots):
                 observations = simulator.begin_step(slot)
@@ -455,8 +524,30 @@ def train_ctde(config_path: str):
                         observations, target, simulator.parameters.update_probability,
                         consecutive_tx_scale, confidence_time_constant, congestion_feature_scale,
                     )
-                global_state = encode_global_state(simulator.centralized_state(last_tx_ratio), target, simulator.parameters.update_probability, simulator.state.n_nodes)
-                value = float(model.value(global_state)[0])
+                global_state = encode_global_state(
+                    simulator.centralized_state(last_tx_ratio), target,
+                    simulator.parameters.update_probability, simulator.state.n_nodes,
+                )
+                if model.critic_architecture == "node_conditioned":
+                    # Centralized state and mean channel power are training-only Critic inputs.
+                    encoded_critic = encode_node_critic_inputs(
+                        observations, simulator.state.version_age(), last_tx_ratio, target,
+                        simulator.parameters.update_probability, simulator.state.n_nodes,
+                        mean_rx_power_mw=simulator.propagation.mean_rx_power_mw,
+                        noise_power_mw=simulator.propagation.parameters.noise_power_mw,
+                        sinr_threshold_db=simulator.propagation.parameters.sinr_threshold_db,
+                        include_scenario_context=critic_config["include_scenario_context"],
+                        include_exact_node_features=critic_config["include_exact_node_features"],
+                        include_channel_features=critic_config["include_channel_features"],
+                        consecutive_tx_scale=consecutive_tx_scale,
+                        neighbor_confidence_time_constant=confidence_time_constant,
+                        congestion_feature_scale=congestion_feature_scale,
+                    )
+                    value = model.value(encoded_critic.critic_inputs).astype(np.float32)
+                    critic_inputs_steps.append(encoded_critic.critic_inputs)
+                else:
+                    value = float(model.value(global_state)[0])
+                    critic_inputs_steps.append(global_state)
                 actions, probabilities, old_log_probabilities = model.act(encoded, action_rng)
                 if model.actor_stage == 2:
                     components = model.stage2_diagnostics(encoded)
@@ -474,14 +565,50 @@ def train_ctde(config_path: str):
                 vaoi_values.append(outcome.mean_vaoi)
                 last_tx_ratio = outcome.transmission_cost
 
-            vaoi_advantages, returns = _gae(vaoi_rewards, value_steps, float(training.get("gamma", 0.99)), float(training.get("gae_lambda", 0.95)))
-            normalized_vaoi_advantages = _standardize(vaoi_advantages)
-            actor_vaoi_advantages = np.concatenate([
-                np.full(
-                    (step.curvature_scores if model.actor_stage in (1, 2) else step.node_features).shape[0],
-                    normalized_vaoi_advantages[index], dtype=np.float32,
-                ) for index, step in enumerate(encoded_steps)
-            ])
+            if model.critic_architecture == "node_conditioned":
+                # Build the next decision state after the final transition for bootstrap only.
+                bootstrap_observations = simulator.begin_step(simulator.parameters.slots)
+                bootstrap_input = encode_node_critic_inputs(
+                    bootstrap_observations, simulator.state.version_age(), last_tx_ratio, target,
+                    simulator.parameters.update_probability, simulator.state.n_nodes,
+                    mean_rx_power_mw=simulator.propagation.mean_rx_power_mw,
+                    noise_power_mw=simulator.propagation.parameters.noise_power_mw,
+                    sinr_threshold_db=simulator.propagation.parameters.sinr_threshold_db,
+                    include_scenario_context=critic_config["include_scenario_context"],
+                    include_exact_node_features=critic_config["include_exact_node_features"],
+                    include_channel_features=critic_config["include_channel_features"],
+                    consecutive_tx_scale=consecutive_tx_scale,
+                    neighbor_confidence_time_constant=confidence_time_constant,
+                    congestion_feature_scale=congestion_feature_scale,
+                )
+                bootstrap_values = model.value(bootstrap_input.critic_inputs).astype(np.float32)
+                value_matrix = np.asarray(value_steps, dtype=np.float32)
+                vaoi_advantages, returns = _node_gae(
+                    vaoi_rewards, value_matrix, bootstrap_values,
+                    float(training.get("gamma", 0.99)), float(training.get("gae_lambda", 0.95)),
+                )
+                normalized_vaoi_advantages = _standardize(vaoi_advantages.reshape(-1)).reshape(vaoi_advantages.shape)
+                actor_vaoi_advantages = np.concatenate([
+                    normalized_vaoi_advantages[index].astype(np.float32, copy=False)
+                    for index in range(len(encoded_steps))
+                ])
+                critic_batch = {
+                    "critic_inputs": np.concatenate(critic_inputs_steps).astype(np.float32),
+                    "returns": returns.reshape(-1).astype(np.float32),
+                }
+            else:
+                vaoi_advantages, returns = _gae(
+                    vaoi_rewards, value_steps,
+                    float(training.get("gamma", 0.99)), float(training.get("gae_lambda", 0.95)),
+                )
+                normalized_vaoi_advantages = _standardize(vaoi_advantages)
+                actor_vaoi_advantages = np.concatenate([
+                    np.full(
+                        (step.curvature_scores if model.actor_stage in (1, 2) else step.node_features).shape[0],
+                        normalized_vaoi_advantages[index], dtype=np.float32,
+                    ) for index, step in enumerate(encoded_steps)
+                ])
+                critic_batch = {"global_states": np.asarray(global_states, dtype=np.float32), "returns": returns}
             action_batch = np.concatenate(actions_steps)
             probability_batch = np.concatenate(probability_steps)
             budget_advantages = (
@@ -491,12 +618,29 @@ def train_ctde(config_path: str):
             actor_advantages = (actor_vaoi_advantages + budget_advantages).astype(np.float32)
             actor_batch = model.actor_batch_inputs(encoded_steps)
             actor_batch.update({"actions": action_batch, "old_log_probabilities": np.concatenate(old_log_steps), "advantages": actor_advantages})
-            critic_batch = {"global_states": np.asarray(global_states, dtype=np.float32), "returns": returns}
             vaoi_batch = dict(actor_batch, advantages=actor_vaoi_advantages)
             budget_batch = dict(actor_batch, advantages=budget_advantages)
             vaoi_gradient_norm = model.policy_gradient_norm(vaoi_batch)
             budget_gradient_norm = model.policy_gradient_norm(budget_batch)
+            common_mode_gradient_norm = model.common_mode_gradient_norm(actor_batch)
+            total_actor_gradient_norm = model.total_actor_gradient_norm(actor_batch)
             losses = model.update(actor_batch, critic_batch, epochs=int(training.get("ppo_epochs", 4)))
+
+            if model.critic_architecture == "node_conditioned":
+                critic_value_matrix = np.asarray(value_steps, dtype=np.float32)
+                critic_return_matrix = np.asarray(returns, dtype=np.float32)
+                critic_advantage_matrix = np.asarray(vaoi_advantages, dtype=np.float32)
+                bootstrap_mean = float(np.mean(bootstrap_values))
+                bootstrap_std = float(np.std(bootstrap_values))
+            else:
+                critic_value_matrix = np.asarray(value_steps, dtype=np.float32)[:, None]
+                critic_return_matrix = np.asarray(returns, dtype=np.float32)[:, None]
+                critic_advantage_matrix = np.asarray(vaoi_advantages, dtype=np.float32)[:, None]
+                bootstrap_mean = 0.0
+                bootstrap_std = 0.0
+            critic_residual = critic_return_matrix - critic_value_matrix
+            return_variance = float(np.var(critic_return_matrix))
+            explained_variance = 1.0 - float(np.var(critic_residual)) / (return_variance + 1e-8)
 
             average_cost = float(np.mean(costs))
             tx_ratio_ema = _update_tx_ratio_ema(
@@ -516,7 +660,25 @@ def train_ctde(config_path: str):
                 "mean_action_probability": float(np.mean(probability_steps)), "multiplier_used": multiplier_used,
                 "multiplier_next": multiplier_next, "multiplier_at_max": bool(np.isclose(multiplier_next, multiplier_max)),
                 "actor_loss": losses["actor_loss"], "critic_loss": losses["critic_loss"], "entropy": losses["entropy"], "approx_kl": losses["approx_kl"], "clip_fraction": losses["clip_fraction"],
+                "common_mode_coefficient": common_mode_coefficient,
+                "common_mode_loss": losses["common_mode_loss"],
+                "ppo_policy_gradient_norm": vaoi_gradient_norm,
+                "total_actor_gradient_norm": total_actor_gradient_norm,
+                "common_mode_gradient_norm": common_mode_gradient_norm,
                 "mean_vaoi_advantage": float(np.mean(actor_vaoi_advantages)), "std_vaoi_advantage": float(np.std(actor_vaoi_advantages)), "max_abs_vaoi_advantage": float(np.max(np.abs(actor_vaoi_advantages))),
+                "critic_architecture": model.critic_architecture,
+                "critic_input_dim": model.critic_input_dim,
+                "critic_value_mean": float(np.mean(critic_value_matrix)),
+                "critic_value_std": float(np.std(critic_value_matrix)),
+                "critic_within_slot_value_std_mean": float(np.mean(np.std(critic_value_matrix, axis=1))),
+                "critic_within_slot_value_std_max": float(np.max(np.std(critic_value_matrix, axis=1))),
+                "vaoi_advantage_within_slot_std_mean": float(np.mean(np.std(critic_advantage_matrix, axis=1))),
+                "vaoi_advantage_global_std": float(np.std(critic_advantage_matrix)),
+                "critic_return_mean": float(np.mean(critic_return_matrix)),
+                "critic_return_std": float(np.std(critic_return_matrix)),
+                "critic_explained_variance": explained_variance,
+                "bootstrap_value_mean": bootstrap_mean,
+                "bootstrap_value_std": bootstrap_std,
                 "mean_budget_advantage": float(np.mean(budget_advantages)), "std_budget_advantage": float(np.std(budget_advantages)), "max_abs_budget_advantage": float(np.max(np.abs(budget_advantages))),
                 "vaoi_policy_gradient_norm": vaoi_gradient_norm, "budget_policy_gradient_norm": budget_gradient_norm,
                 "budget_to_vaoi_gradient_ratio": budget_gradient_norm / (vaoi_gradient_norm + 1e-8),
@@ -540,6 +702,9 @@ def train_ctde(config_path: str):
                 scores = np.concatenate([item.curvature_scores[:, 0] for item in encoded_steps])
                 q_base = np.concatenate(base_probability_steps)
                 delta = np.concatenate(residual_delta_steps)
+                delta_matrix = np.asarray(residual_delta_steps, dtype=np.float32)
+                step_residual_means = np.mean(delta_matrix, axis=1)
+                delta_max = float(actor_config["residual"].get("delta_max", 1.0))
                 row.update({
                     "actor_architecture_version": actor_config["architecture_version"],
                     "use_stage1_reference": bool(actor_config["residual"].get("use_stage1_reference", True)),
@@ -552,6 +717,13 @@ def train_ctde(config_path: str):
                     "q_base_min": float(np.min(q_base)), "q_base_max": float(np.max(q_base)),
                     "residual_delta_mean": float(np.mean(delta)), "residual_delta_std": float(np.std(delta)),
                     "residual_delta_min": float(np.min(delta)), "residual_delta_max": float(np.max(delta)),
+                    "residual_mean_global": float(np.mean(delta)),
+                    "residual_std_global": float(np.std(delta)),
+                    "residual_mean_per_step_abs_mean": float(np.mean(np.abs(step_residual_means))),
+                    "residual_mean_per_step_abs_max": float(np.max(np.abs(step_residual_means))),
+                    "residual_positive_fraction": float(np.mean(delta > 0.0)),
+                    "residual_negative_fraction": float(np.mean(delta < 0.0)),
+                    "residual_saturation_fraction": float(np.mean(np.abs(delta) >= 0.95 * delta_max)),
                     "q_final_mean": float(np.mean(probability_steps)),
                     "q_final_std": float(np.std(probability_steps)),
                     "corr_s_kappa_q_base": float(np.corrcoef(scores, q_base)[0, 1]) if np.std(scores) > 0.0 else 0.0,
@@ -616,7 +788,12 @@ def train_ctde(config_path: str):
         "model_version": (actor_config.get("architecture_version", "curvature_stage2_residual") if model.actor_stage == 2 else
                           "curvature_stage1_single_alpha" if model.actor_stage == 1 else
                           "node_only_freshness_lagrangian_v3"),
-        "actor": _json_safe(actor_config), "initial_checkpoint": initial_checkpoint,
+        "actor": _json_safe(actor_config), "critic": _json_safe(critic_config),
+        "critic_architecture": model.critic_architecture,
+        "critic_input_dim": model.critic_input_dim,
+        "critic_input_feature_names": list(model.critic_feature_names),
+        "common_mode_coefficient": common_mode_coefficient,
+        "initial_checkpoint": initial_checkpoint,
         "restored_variables": list(restored_variables), "vaoi_reward_scale": vaoi_reward_scale,
         "actor_learning_rate": actor_learning_rate, "critic_learning_rate": critic_learning_rate,
         "consecutive_tx_scale": consecutive_tx_scale, "neighbor_confidence_time_constant": confidence_time_constant,
