@@ -1,0 +1,94 @@
+experiment:
+  master_seed: 20260804
+topology:
+  type: random_geometric
+  params:
+    n_nodes: 100
+    area_width_m: 200.0
+    area_height_m: 200.0
+    communication_radius_m: 40.0
+    max_attempts: 500
+source:
+  update_probability: 0.15
+channel:
+  tx_power_dbm: 20.0
+  pathloss_reference_db: 30.0
+  reference_distance_m: 1.0
+  pathloss_exponent: 2.5
+  shadowing_std_db: 0.0
+  reciprocal_shadowing: true
+  rayleigh_fading: false
+  noise_psd_dbm_per_hz: -174.0
+  bandwidth_hz: 1000000.0
+  noise_figure_db: 5.0
+  sinr_threshold_db: -3.0
+curvature:
+  method: distributed_af3
+  normalization: local_degree_bound
+constraints:
+  target_tx_ratio: 0.1
+  per_node_cap_multiplier: 1.5
+observation:
+  consecutive_tx_scale: 3.0
+  neighbor_confidence_time_constant: 20.0
+  congestion_ewma_beta: 0.8
+  congestion_feature_scale: 5.0
+validation:
+  scenarios:
+  - id: u0.15_s00
+    topology_seed: 105200
+    source_update_seed: 106200
+    channel_shadowing_seed: 107200
+    channel_fading_seed: 108200
+    policy_action_seed: 109200
+    slots: 500
+    n_nodes: 100
+    update_probability: 0.15
+    target_tx_ratio: 0.1
+  - id: u0.15_s01
+    topology_seed: 105201
+    source_update_seed: 106201
+    channel_shadowing_seed: 107201
+    channel_fading_seed: 108201
+    policy_action_seed: 109201
+    slots: 500
+    n_nodes: 100
+    update_probability: 0.15
+    target_tx_ratio: 0.1
+  - id: u0.15_s02
+    topology_seed: 105202
+    source_update_seed: 106202
+    channel_shadowing_seed: 107202
+    channel_fading_seed: 108202
+    policy_action_seed: 109202
+    slots: 500
+    n_nodes: 100
+    update_probability: 0.15
+    target_tx_ratio: 0.1
+  - id: u0.15_s03
+    topology_seed: 105203
+    source_update_seed: 106203
+    channel_shadowing_seed: 107203
+    channel_fading_seed: 108203
+    policy_action_seed: 109203
+    slots: 500
+    n_nodes: 100
+    update_probability: 0.15
+    target_tx_ratio: 0.1
+  - id: u0.15_s04
+    topology_seed: 105204
+    source_update_seed: 106204
+    channel_shadowing_seed: 107204
+    channel_fading_seed: 108204
+    policy_action_seed: 109204
+    slots: 500
+    n_nodes: 100
+    update_probability: 0.15
+    target_tx_ratio: 0.1
+metadata:
+  topology_name: random
+  node_count: 100
+  update_probability: 0.15
+  scenarios_per_update_probability: 5
+  slots_per_scenario: 500
+  change_policy: only source update probability u changes; N=100 geometry is unchanged

@@ -1,0 +1,81 @@
+{
+  "center_definition": "node c_kappa=max incident local_degree_bound bottleneck importance; test center is the mean over all N=150 test nodes and five scenarios",
+  "configs": {
+    "community": [
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Stage1_Center_kappa_analysis\\configs\\community\\n050.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Stage1_Center_kappa_analysis\\configs\\community\\n060.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Stage1_Center_kappa_analysis\\configs\\community\\n070.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Stage1_Center_kappa_analysis\\configs\\community\\n080.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Stage1_Center_kappa_analysis\\configs\\community\\n090.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Stage1_Center_kappa_analysis\\configs\\community\\n100.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Stage1_Center_kappa_analysis\\configs\\community\\n110.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Stage1_Center_kappa_analysis\\configs\\community\\n120.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Stage1_Center_kappa_analysis\\configs\\community\\n130.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Stage1_Center_kappa_analysis\\configs\\community\\n140.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Stage1_Center_kappa_analysis\\configs\\community\\n150.yaml"
+    ],
+    "random": [
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Stage1_Center_kappa_analysis\\configs\\random\\n050.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Stage1_Center_kappa_analysis\\configs\\random\\n060.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Stage1_Center_kappa_analysis\\configs\\random\\n070.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Stage1_Center_kappa_analysis\\configs\\random\\n080.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Stage1_Center_kappa_analysis\\configs\\random\\n090.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Stage1_Center_kappa_analysis\\configs\\random\\n100.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Stage1_Center_kappa_analysis\\configs\\random\\n110.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Stage1_Center_kappa_analysis\\configs\\random\\n120.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Stage1_Center_kappa_analysis\\configs\\random\\n130.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Stage1_Center_kappa_analysis\\configs\\random\\n140.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Stage1_Center_kappa_analysis\\configs\\random\\n150.yaml"
+    ]
+  },
+  "fixed_centers": {
+    "community": 0.4012991820118967,
+    "random": 0.42143491589124205
+  },
+  "models": [
+    {
+      "checkpoint_episode": 250,
+      "fixed_training_center": 0.4012991820118967,
+      "model": "curvature",
+      "model_dir": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\mpnnV3_heuristic_channel_n100_u0.20_b0.10_a1.5_lowLR",
+      "test_n150_center": 0.42152333011229104,
+      "topology": "community"
+    },
+    {
+      "checkpoint_episode": 270,
+      "fixed_training_center": 0.42143491589124205,
+      "model": "curvature",
+      "model_dir": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\mpnnV3_random_n100_u0.20_b0.10_a1.5_lowLR",
+      "test_n150_center": 0.4409601729880356,
+      "topology": "random"
+    }
+  ],
+  "n150": 150,
+  "n150_slots_override": null,
+  "node_counts": [
+    50,
+    60,
+    70,
+    80,
+    90,
+    100,
+    110,
+    120,
+    130,
+    140,
+    150
+  ],
+  "output_root": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Stage1_Center_kappa_analysis",
+  "plots": {
+    "center_statistics": [
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Stage1_Center_kappa_analysis\\center_statistics.png",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Stage1_Center_kappa_analysis\\center_statistics.pdf"
+    ],
+    "n150_center_comparison": [
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Stage1_Center_kappa_analysis\\n150_center_comparison.png",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Stage1_Center_kappa_analysis\\n150_center_comparison.pdf"
+    ]
+  },
+  "scenarios_per_node_count": 5,
+  "source_scalability_root": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Scalability_N"
+}

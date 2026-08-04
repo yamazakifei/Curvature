@@ -1,0 +1,67 @@
+{
+  "configs": {
+    "community": [
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Scalability\\configs\\community\\n050.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Scalability\\configs\\community\\n060.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Scalability\\configs\\community\\n070.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Scalability\\configs\\community\\n080.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Scalability\\configs\\community\\n090.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Scalability\\configs\\community\\n100.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Scalability\\configs\\community\\n110.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Scalability\\configs\\community\\n120.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Scalability\\configs\\community\\n130.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Scalability\\configs\\community\\n140.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Scalability\\configs\\community\\n150.yaml"
+    ],
+    "random": [
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Scalability\\configs\\random\\n050.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Scalability\\configs\\random\\n060.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Scalability\\configs\\random\\n070.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Scalability\\configs\\random\\n080.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Scalability\\configs\\random\\n090.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Scalability\\configs\\random\\n100.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Scalability\\configs\\random\\n110.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Scalability\\configs\\random\\n120.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Scalability\\configs\\random\\n130.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Scalability\\configs\\random\\n140.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Scalability\\configs\\random\\n150.yaml"
+    ]
+  },
+  "density_scaling": "area and community geometry scale as sqrt(N/100); communication radius remains fixed",
+  "evaluation_master_seed": 20260804,
+  "models": [
+    {
+      "checkpoint_episode": 250,
+      "model": "curvature",
+      "model_dir": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\mpnnV3_heuristic_channel_n100_u0.20_b0.10_a1.5_lowLR",
+      "topology": "community"
+    },
+    {
+      "checkpoint_episode": 200,
+      "model": "no_curvature",
+      "model_dir": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\mpnnV3_no_curvature_heuristic_channel_n100_u0.20_b0.10",
+      "topology": "community"
+    }
+  ],
+  "node_counts": [
+    50,
+    60,
+    70,
+    80,
+    90,
+    100,
+    110,
+    120,
+    130,
+    140,
+    150
+  ],
+  "plots": {
+    "community": [
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Scalability\\community\\scalability_community.png",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Scalability\\community\\scalability_community.pdf"
+    ]
+  },
+  "scenarios_per_node_count": 5,
+  "slots_per_scenario": 200
+}

@@ -1,0 +1,16 @@
+model,model_label,scenario_id,topology,node_count,slots,update_probability,target_tx_ratio,mean_VAoI,actual_tx_ratio,action_prob_mean,action_prob_std
+curvature,Community-trained curvature MPNN,n100_s00,random_geometric,100,200,0.2,0.1,4.487870202020203,0.12265000000000001,0.12420874089002609,0.08016186207532883
+curvature,Community-trained curvature MPNN,n100_s01,random_geometric,100,200,0.2,0.1,4.528423737373736,0.12869999999999998,0.13121609389781952,0.08464597910642624
+curvature,Community-trained curvature MPNN,n100_s02,random_geometric,100,200,0.2,0.1,4.59874595959596,0.1328,0.1295834481716156,0.08251743018627167
+curvature,Community-trained curvature MPNN,n100_s03,random_geometric,100,200,0.2,0.1,4.660670202020204,0.13375,0.13342492282390594,0.08518677204847336
+curvature,Community-trained curvature MPNN,n100_s04,random_geometric,100,200,0.2,0.1,4.578365151515152,0.1277,0.12948957085609436,0.08078333735466003
+no_curvature,Community-trained no-curvature MPNN,n100_s00,random_geometric,100,200,0.2,0.1,4.9978136363636345,0.1272,0.12887777388095856,0.08094233274459839
+no_curvature,Community-trained no-curvature MPNN,n100_s01,random_geometric,100,200,0.2,0.1,4.745728787878789,0.129,0.13218146562576294,0.08203457295894623
+no_curvature,Community-trained no-curvature MPNN,n100_s02,random_geometric,100,200,0.2,0.1,4.72211565656566,0.13205,0.1293001025915146,0.08162553608417511
+no_curvature,Community-trained no-curvature MPNN,n100_s03,random_geometric,100,200,0.2,0.1,4.4745126262626265,0.13225,0.1327298879623413,0.08239562064409256
+no_curvature,Community-trained no-curvature MPNN,n100_s04,random_geometric,100,200,0.2,0.1,4.65643787878788,0.1319,0.13252004981040955,0.08233679085969925
+random_curvature,Random-trained curvature MPNN,n100_s00,random_geometric,100,200,0.2,0.1,4.503895454545456,0.12325,0.1251973956823349,0.0862751230597496
+random_curvature,Random-trained curvature MPNN,n100_s01,random_geometric,100,200,0.2,0.1,4.61958787878788,0.1308,0.1321452558040619,0.0911552682518959
+random_curvature,Random-trained curvature MPNN,n100_s02,random_geometric,100,200,0.2,0.1,4.513490404040405,0.13405,0.13098658621311188,0.0896628275513649
+random_curvature,Random-trained curvature MPNN,n100_s03,random_geometric,100,200,0.2,0.1,4.467101515151513,0.1363,0.13443517684936523,0.09257792681455612
+random_curvature,Random-trained curvature MPNN,n100_s04,random_geometric,100,200,0.2,0.1,4.524617171717173,0.12845,0.13172301650047302,0.08729477971792221

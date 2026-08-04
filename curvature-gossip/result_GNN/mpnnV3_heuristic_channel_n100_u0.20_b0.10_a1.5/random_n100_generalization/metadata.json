@@ -1,0 +1,32 @@
+{
+  "evaluation_config": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Scalability_N\\configs\\random\\n100.yaml",
+  "models": [
+    {
+      "checkpoint_episode": 40,
+      "model": "curvature",
+      "model_dir": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\mpnnV3_heuristic_channel_n100_u0.20_b0.10_a1.5",
+      "model_label": "Community-trained curvature MPNN"
+    },
+    {
+      "checkpoint_episode": 200,
+      "model": "no_curvature",
+      "model_dir": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\mpnnV3_no_curvature_heuristic_channel_n100_u0.20_b0.10",
+      "model_label": "Community-trained no-curvature MPNN"
+    },
+    {
+      "checkpoint_episode": 270,
+      "model": "random_curvature",
+      "model_dir": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\mpnnV3_random_n100_u0.20_b0.10_a1.5_lowLR",
+      "model_label": "Random-trained curvature MPNN"
+    }
+  ],
+  "node_count": 100,
+  "output_root": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\mpnnV3_heuristic_channel_n100_u0.20_b0.10_a1.5\\random_n100_generalization",
+  "paired_evaluation": true,
+  "plots": [
+    "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\mpnnV3_heuristic_channel_n100_u0.20_b0.10_a1.5\\random_n100_generalization\\random_n100_comparison.png",
+    "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\mpnnV3_heuristic_channel_n100_u0.20_b0.10_a1.5\\random_n100_generalization\\random_n100_comparison.pdf"
+  ],
+  "scenarios_per_model": 5,
+  "topology": "random_geometric"
+}

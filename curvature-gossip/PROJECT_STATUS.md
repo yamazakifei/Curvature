@@ -107,7 +107,51 @@ fixed scenarios per node count. The area and community geometry lengths scale
 with `sqrt(N/100)` while the communication radius remains fixed, preserving
 the approximate areal node density and radio range.
 
+The generated scan uses 200 slots per scenario by default to keep the full
+scale sweep practical; pass `--slots 500` to align the evaluation horizon with
+the original fixed-validation configurations.
+
 The script writes one YAML per topology and node count under
 `result_GNN/0804Scalability/configs/`, evaluates both restored models, and
 outputs `scalability_per_scenario.csv`, `scalability_summary.csv`, metadata, and
 separate PNG/PDF line plots for the two topologies.
+
+## GNN update-probability generalization (2026-08-04)
+
+Added `scripts/run_gnn_update_probability_generalization.py` for the paired
+N=100 sweep at `u=0.05, 0.10, 0.15, 0.20, 0.25, 0.30`. Community and
+random-geometric topologies each use five fixed scenarios per update
+probability; the original N=100 geometry is kept unchanged. Results and the
+12 generated YAML files are stored under `result_GNN/0804Scalability_u/`.
+
+The default horizon is 200 slots per scenario, with `--slots 500` available for
+strict alignment with the original fixed-validation horizon. The output has
+one combined per-scenario CSV and one combined summary CSV, plus separate
+community/random PNG/PDF update-probability curves.
+The reported sweep in `result_GNN/0804Scalability_u/` was run with
+`--slots 500` to match the original N=100 validation horizon.
+
+## Stage-1 fixed c_kappa center analysis (2026-08-04)
+
+Added `scripts/run_stage1_center_kappa_analysis.py`. It reuses the exact
+N=50, 60, ..., 150 configurations from `result_GNN/0804Scalability_N/` and
+computes the node-level `c_kappa` distribution for five scenarios at each
+node count. It compares those distributions with each model's frozen
+training center, then evaluates the same N=150 scenarios after replacing
+only the curvature center with the pooled N=150 test center. The paired
+evaluation keeps the restored checkpoint and all scenario seeds unchanged;
+the existing 200-slot scalability rows provide the fixed-center baseline.
+
+Outputs are stored under `result_GNN/0804Stage1_Center_kappa_analysis/`,
+including center statistics CSVs, N=150 paired comparison CSVs, PNG/PDF
+figures, copied YAML configurations, and metadata.
+
+## Community-trained models on random N=100 scenarios (2026-08-04)
+
+Added `scripts/compare_community_models_on_random_n100.py` to compare the
+community-trained curvature MPNN, its community-trained no-curvature ablation,
+and the corresponding random-trained curvature MPNN on the same five random
+geometric N=100 scenarios. The evaluation uses the existing 200-slot
+`result_GNN/0804Scalability_N/configs/random/n100.yaml` configuration and
+stores the three-model comparison under
+`result_GNN/mpnnV3_heuristic_channel_n100_u0.20_b0.10_a1.5/random_n100_generalization/`.
