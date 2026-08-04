@@ -42,6 +42,18 @@ def test_mpnn_encoder_disables_curvature_edge_feature_for_no_curvature_ablation(
     assert np.allclose(encoded.edge_features[:, 2], 0.0)
 
 
+def test_mpnn_no_curvature_encoder_does_not_read_curvature_fields():
+    first = _observation(10, [20], [[2, 1, 3]], [True], [2], {20: -999.0})
+    second = _observation(20, [10], [[0, 1, 2]], [False], [-1], {10: 999.0})
+    encoded = encode_stage2_mpnn_observations(
+        [first, second], 0.1, 0.2, use_curvature_edge_feature=True,
+        use_curvature=False,
+    )
+    assert np.allclose(encoded.curvature_scores, 0.0)
+    assert encoded.edge_features.shape == (2, 3)
+    assert np.allclose(encoded.edge_features[:, 2], 0.0)
+
+
 def test_mpnn_encoder_rejects_neighbors_missing_from_batch():
     lone = _observation(10, [20], [[2, 1, 3]], [True], [2])
     try:

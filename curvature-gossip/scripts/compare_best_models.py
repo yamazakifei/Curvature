@@ -23,7 +23,7 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from curvature_gossip.learning.ctde_ppo import CTDEPPO, resolve_learning_rates
-from curvature_gossip.learning.trainer import _stage1_actor_config
+from curvature_gossip.learning.trainer import _critic_config, _stage1_actor_config
 from curvature_gossip.learning.validation import evaluate_fixed_validation
 
 
@@ -159,6 +159,7 @@ def compare_models(
     for model_dir, raw in zip(model_dirs, raw_configs):
         # Reconstruct precisely from the model's persisted actor configuration.
         actor = _stage1_actor_config(raw)
+        critic = _critic_config(raw)
         actor_learning_rate, critic_learning_rate = resolve_learning_rates(raw.get("training", {}))
         model = CTDEPPO(
             learning_rate=float(raw.get("training", {}).get("learning_rate", 3e-4)),
@@ -166,7 +167,8 @@ def compare_models(
             critic_learning_rate=critic_learning_rate,
             clip_ratio=float(raw.get("training", {}).get("clip_ratio", 0.2)),
             entropy_coefficient=float(raw.get("training", {}).get("entropy_coefficient", 0.0)),
-            seed=int(raw.get("experiment", {}).get("master_seed", 0)), actor_config=actor,
+            seed=int(raw.get("experiment", {}).get("master_seed", 0)),
+            actor_config=actor, critic_config=critic,
         )
         try:
             model.restore(str(model_dir / DEFAULT_CHECKPOINT))

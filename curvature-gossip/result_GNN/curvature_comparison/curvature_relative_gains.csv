@@ -1,0 +1,5 @@
+topology,topology_label,comparison,label,checkpoint_curvature,checkpoint_no_curvature,n_scenarios,mean_gain_percent,ci95_gain_percent
+community,Community topology,vs_no_curvature,Curvature vs no-curvature,250,200,10,7.953684590280709,2.7205127002815233
+community,Community topology,vs_matched_random,Curvature vs matched random,250,200,10,25.881140160198747,1.9823648179502198
+random,Random-geometric topology,vs_no_curvature,Curvature vs no-curvature,270,210,10,1.8609760031287208,1.4379755385591904
+random,Random-geometric topology,vs_matched_random,Curvature vs matched random,270,210,10,22.663732958137334,1.1300259126094776

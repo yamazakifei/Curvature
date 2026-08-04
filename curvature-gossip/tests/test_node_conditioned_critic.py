@@ -1,5 +1,6 @@
-"""Test the 25D deduplicated node-conditioned Critic and node-wise GAE."""
+"""Test full and dual no-curvature node-conditioned Critic encoders and GAE."""
 
+from dataclasses import replace
 import numpy as np
 
 from curvature_gossip.learning.ctde_ppo import CTDEPPO
@@ -9,7 +10,7 @@ from curvature_gossip.learning.features import (
     encode_node_critic_inputs,
     node_critic_feature_names,
 )
-from curvature_gossip.learning.trainer import _gae, _node_gae
+from curvature_gossip.learning.trainer import _critic_config, _gae, _node_gae
 from curvature_gossip.simulator.observations import NodeObservation
 
 
@@ -127,6 +128,63 @@ def test_node_conditioned_model_outputs_one_value_per_node_and_scalar_is_compati
     finally:
         model.close()
         scalar.close()
+
+
+def test_no_curvature_critic_layout_is_22d_and_ignores_curvature_values():
+    names = node_critic_feature_names(True, True, True, False)
+    assert len(names) == 22
+    assert "incident_bottleneck_max" not in names
+    assert "incident_bottleneck_mean" not in names
+    assert "exact_bottleneck_weighted_innovation" not in names
+    assert names[-2:] == ("mean_link_margin", "weak_link_margin")
+
+    observations = _observations()
+    changed = tuple(
+        replace(
+            item,
+            incident_curvatures={neighbor: 1000.0 for neighbor in item.neighbor_ids},
+            incident_bottleneck_importance={neighbor: 1.0 for neighbor in item.neighbor_ids},
+        )
+        for item in observations
+    )
+    version_age = np.asarray([[0, 1, 2], [3, 0, 4], [5, 6, 0]], dtype=np.float32)
+    received_power = np.ones((3, 3), dtype=np.float64)
+    np.fill_diagonal(received_power, 0.0)
+    original = encode_node_critic_inputs(
+        observations, version_age, 0.1, 0.1, 0.2, 3,
+        mean_rx_power_mw=received_power, noise_power_mw=1.0, sinr_threshold_db=0.0,
+        include_curvature_features=False,
+    )
+    altered = encode_node_critic_inputs(
+        changed, version_age, 0.1, 0.1, 0.2, 3,
+        mean_rx_power_mw=received_power, noise_power_mw=1.0, sinr_threshold_db=0.0,
+        include_curvature_features=False,
+    )
+    assert original.critic_inputs.shape == (3, 22)
+    assert np.allclose(original.critic_inputs, altered.critic_inputs)
+
+    model = CTDEPPO(
+        seed=94,
+        critic_config={"architecture": "node_conditioned", "include_curvature_features": False},
+    )
+    try:
+        assert model.critic_input_dim == 22
+        assert model.value(np.zeros((3, 22), dtype=np.float32)).shape == (3,)
+    finally:
+        model.close()
+
+
+def test_no_curvature_critic_config_resolves_explicit_22d_schema():
+    critic = _critic_config({
+        "critic": {
+            "architecture": "node_conditioned",
+            "include_curvature_features": False,
+            "input_dim": 22,
+        }
+    })
+    assert critic["input_dim"] == 22
+    assert critic["include_curvature_features"] is False
+    assert "incident_bottleneck_max" not in critic["input_feature_names"]
 
 
 def test_actor_only_restore_excludes_critic_and_optimizer_variables(monkeypatch):

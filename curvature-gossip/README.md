@@ -247,6 +247,46 @@ values are also recorded in `model_metadata.json`.
 `rollout_slots: *evaluation_slots`。修改网络规模后，仍须手动检查默认
 `topology.params.cluster_sizes` 是否与节点数相符。
 
+`configs/nn_2_layers/nn_2layers_newC_heuristic_channel.yaml` 用于 Critic 架构消融：
+它保留 `nn_2layers_stage2` 的 soft-two-community 拓扑和 Stage-2 MLP Actor，
+并将启发式物理信道及完整训练区块对齐到 `GNN/mpnn_newC_heuristic_channel.yaml`
+（包括 `b=0.10`、Actor/Critic 独立学习率和 `common_mode_coefficient`）。同时启用
+最新的 `node_conditioned` centralized Critic（25 维节点级输入、`node_gae` 和
+rollout-end bootstrap）；该 Critic 仅在训练阶段使用，执行阶段仍由 MLP Actor
+根据本地观测产生动作。
+
+## 双侧 no-curvature 消融
+
+Stage-2 双侧 no-curvature 严格指 Actor 和 node-conditioned Critic 都不读取曲率。
+仿真环境仍计算曲率，以保持 paired experiment 的物理环境一致，但曲率不进入策略、
+Critic、rollout bootstrap 或 validation 编码。
+
+配对配置如下：
+
+- `configs/nn_2_layers/nn_2layers_newC_no_curvature_heuristic_channel.yaml`
+- `configs/GNN/mpnn_newC_no_curvature_heuristic_channel.yaml`
+
+两份配置均设置 `actor.curvature.enabled: false`、`alpha_override: 0.0`、
+`residual.use_stage1_reference: false`，以及 `critic.include_curvature_features: false`
+和 `critic.input_dim: 22`。no-curvature Critic 的 22 维输入为
+`4 global + 3 scenario + 6 local + 7 exact + 2 channel`；完整曲率 Critic 仍为 25 维。
+
+MPNN 保持 3 维 edge tensor 和原有隐藏层容量，列顺序为
+`neighbor_freshness_gain`、`neighbor_estimate_confidence`、
+`disabled_zero_placeholder`。第三列固定为零，不读取 incident 或 bottleneck curvature。
+
+两份 smoke 配置可用以下命令验证：
+
+```powershell
+conda run --no-capture-output -n GRL_AoI_cpu37 python scripts/train_nn_ctde.py --config configs/nn_2_layers/nn_2layers_newC_no_curvature_smoke.yaml
+conda run --no-capture-output -n GRL_AoI_cpu37 python scripts/train_nn_ctde.py --config configs/GNN/mpnn_newC_no_curvature_smoke.yaml
+```
+
+no-curvature 模型必须从头训练；旧的曲率 Actor checkpoint 或 25 维 Critic checkpoint
+不会被双侧 no-curvature 配置恢复。`model_metadata.json` 会记录
+`actor_curvature_enabled`、`critic_curvature_enabled`、`critic_input_dim`、
+`critic_input_feature_names` 和 `mpnn_disabled_edge_feature`。
+
 ## 启发式物理信道下的固定 alpha 对照（2026-07-28）
 
 `configs/nn_2layers_stage1_fixed_alpha_heuristic_channel.yaml` 用于关闭 Stage-2 residual 后，在当前启发式物理信道（无 shadowing/fading）下评估固定 Stage-1 alpha。已完成 `u=0.05/0.10/0.20`、`b=0.10`、`alpha=0.5/1.0/1.2/1.5/1.8` 的配对验证；完整结果及与 Stage-2 最佳验证 checkpoint 的比较见 `result_2layers/fixed_alpha_grid_heuristic_channel_b0.10/comparison_report.md`。

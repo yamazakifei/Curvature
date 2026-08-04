@@ -27,6 +27,7 @@ from .features import (
     encode_stage1_observations, encode_stage2_observations, encode_stage2_mpnn_observations,
     encode_node_critic_inputs, node_critic_feature_names,
     stage2_context_feature_names, STAGE2_MPNN_NODE_FEATURE_NAMES, STAGE2_MPNN_EDGE_FEATURE_NAMES,
+    STAGE2_MPNN_NO_CURVATURE_EDGE_FEATURE_NAMES,
 )
 from .validation import evaluate_fixed_validation, probability_statistics, validation_scenarios
 
@@ -210,6 +211,7 @@ def _stage1_actor_config(raw: Mapping) -> Mapping:
     if stage not in (1, 2):
         return actor
     curvature = dict(actor.get("curvature", {}))
+    curvature_enabled = bool(curvature.get("enabled", True))
     if curvature.get("score", "incident_bottleneck_max") != "incident_bottleneck_max":
         raise ValueError("Stage 1 requires curvature.score=incident_bottleneck_max")
     if curvature.get("alpha_parameterization", "softplus") != "softplus":
@@ -217,6 +219,8 @@ def _stage1_actor_config(raw: Mapping) -> Mapping:
     residual = dict(actor.get("residual", {}))
     if stage == 1 and bool(residual.get("enabled", False)):
         raise ValueError("Stage 1 must not instantiate a residual MLP")
+    if stage == 1 and not curvature_enabled:
+        raise ValueError("Stage 1 requires actor.curvature.enabled=true")
     actor["curvature"] = curvature
     if stage == 1:
         actor["architecture_version"] = "curvature_stage1_v1"
@@ -240,6 +244,11 @@ def _stage1_actor_config(raw: Mapping) -> Mapping:
         override = curvature.get("alpha_override")
         if override is None or float(override) != 0.0:
             raise ValueError("Stage-2 without a Stage-1 reference requires actor.curvature.alpha_override=0.0")
+    if not curvature_enabled:
+        if use_stage1_reference:
+            raise ValueError("no-curvature Stage 2 must disable residual.use_stage1_reference")
+        if curvature.get("alpha_override") is None or float(curvature.get("alpha_override")) != 0.0:
+            raise ValueError("no-curvature Stage 2 requires actor.curvature.alpha_override=0.0")
     residual.setdefault("delta_max", 1.0)
     residual.setdefault("freeze_stage1", False)
     residual["architecture"] = architecture
@@ -269,13 +278,17 @@ def _stage1_actor_config(raw: Mapping) -> Mapping:
         actor.update({
             "architecture_version": "curvature_stage2_mpnn_v1" if use_stage1_reference else "no_curvature_stage2_mpnn_v1",
             "residual_architecture": "mpnn", "node_input_feature_names": node_features,
-            "edge_input_feature_names": list(STAGE2_MPNN_EDGE_FEATURE_NAMES),
+            "edge_input_feature_names": list(
+                STAGE2_MPNN_EDGE_FEATURE_NAMES if use_curvature_edge_feature
+                else STAGE2_MPNN_NO_CURVATURE_EDGE_FEATURE_NAMES
+            ),
             "node_input_dim": len(node_features), "edge_input_dim": 3, "message_input_dim": len(node_features) + 3,
             "message_dim": 16, "aggregation": "mean_max", "aggregated_message_dim": 32,
             "decoder_input_dim": len(node_features) + 32 + (1 if use_stage1_reference else 0),
             "condition_message_on_receiver": True, "use_sender_node_features": False,
             "use_curvature_edge_feature": use_curvature_edge_feature, "bmax": bmax,
             "input_feature_names": node_features,
+            "curvature_enabled": curvature_enabled,
         })
         return actor
     context_features = list(stage2_context_feature_names(
@@ -290,6 +303,7 @@ def _stage1_actor_config(raw: Mapping) -> Mapping:
         if use_stage1_reference else context_features
     )
     actor["residual_architecture"] = "mlp"
+    actor["curvature_enabled"] = curvature_enabled
     return actor
 
 
@@ -334,10 +348,13 @@ def _critic_config(raw: Mapping) -> Mapping:
     include_scenario = bool(critic.get("include_scenario_context", True))
     include_exact = bool(critic.get("include_exact_node_features", True))
     include_channel = bool(critic.get("include_channel_features", True))
+    include_curvature = bool(critic.get("include_curvature_features", True))
     hidden_dims = list(critic.get("hidden_dims", [64, 64]))
     if hidden_dims != [64, 64] or critic.get("activation", "relu") != "relu":
         raise ValueError("node-conditioned Critic requires hidden_dims=[64, 64] and relu activation")
-    names = node_critic_feature_names(include_scenario, include_exact, include_channel)
+    names = node_critic_feature_names(
+        include_scenario, include_exact, include_channel, include_curvature
+    )
     configured_dim = int(critic.get("input_dim", len(names)))
     if configured_dim != len(names):
         raise ValueError("critic.input_dim does not match the enabled feature groups")
@@ -348,6 +365,7 @@ def _critic_config(raw: Mapping) -> Mapping:
         "include_scenario_context": include_scenario,
         "include_exact_node_features": include_exact,
         "include_channel_features": include_channel,
+        "include_curvature_features": include_curvature,
         "advantage_mode": str(critic.get("advantage_mode", "node_gae")),
         "bootstrap_rollout_end": bool(critic.get("bootstrap_rollout_end", True)),
         "input_dim": configured_dim,
@@ -364,10 +382,14 @@ def train_ctde(config_path: str):
     raw = config.raw
     actor_config = _stage1_actor_config(raw)
     critic_config = _critic_config(raw)
-    if int(actor_config.get("stage", 0)) in (1, 2):
+    if (int(actor_config.get("stage", 0)) in (1, 2)
+            and bool(actor_config.get("curvature", {}).get("enabled", True))):
         frozen_center = _freeze_stage1_center(raw, actor_config)
         actor_config = dict(actor_config)
         actor_config["curvature"] = dict(actor_config["curvature"], center=frozen_center)
+        raw["actor"] = actor_config
+    elif int(actor_config.get("stage", 0)) == 2:
+        # No-curvature runs must not spend startup time computing a curvature center.
         raw["actor"] = actor_config
     training = raw.get("training", {})
     constraints = raw.get("constraints", {})
@@ -431,6 +453,9 @@ def train_ctde(config_path: str):
     initial_checkpoint = training.get("initial_checkpoint")
     restored_variables = ()
     if initial_checkpoint:
+        if (not model.actor_curvature_enabled
+                and not critic_config.get("include_curvature_features", True)):
+            raise ValueError("dual no-curvature experiments must train from scratch without initial_checkpoint")
         restored_variables = (
             model.restore_actor_only(str(initial_checkpoint))
             if bool(training.get("restore_actor_only", False))
@@ -512,12 +537,14 @@ def train_ctde(config_path: str):
                             include_scenario_context,
                             use_curvature_edge_feature=bool(residual.get("mpnn", {}).get("use_curvature_edge_feature", False)),
                             bmax=float(residual.get("mpnn", {}).get("bmax", 1.0)),
+                            use_curvature=model.actor_curvature_enabled,
                         )
                     else:
                         encoded = encode_stage2_observations(
                             observations, target, simulator.parameters.update_probability,
                             consecutive_tx_scale, confidence_time_constant, congestion_feature_scale,
                             include_scenario_context,
+                            model.actor_curvature_enabled,
                         )
                 else:
                     encoded = encode_observations(
@@ -539,6 +566,7 @@ def train_ctde(config_path: str):
                         include_scenario_context=critic_config["include_scenario_context"],
                         include_exact_node_features=critic_config["include_exact_node_features"],
                         include_channel_features=critic_config["include_channel_features"],
+                        include_curvature_features=critic_config["include_curvature_features"],
                         consecutive_tx_scale=consecutive_tx_scale,
                         neighbor_confidence_time_constant=confidence_time_constant,
                         congestion_feature_scale=congestion_feature_scale,
@@ -577,6 +605,7 @@ def train_ctde(config_path: str):
                     include_scenario_context=critic_config["include_scenario_context"],
                     include_exact_node_features=critic_config["include_exact_node_features"],
                     include_channel_features=critic_config["include_channel_features"],
+                    include_curvature_features=critic_config["include_curvature_features"],
                     consecutive_tx_scale=consecutive_tx_scale,
                     neighbor_confidence_time_constant=confidence_time_constant,
                     congestion_feature_scale=congestion_feature_scale,
@@ -668,6 +697,12 @@ def train_ctde(config_path: str):
                 "mean_vaoi_advantage": float(np.mean(actor_vaoi_advantages)), "std_vaoi_advantage": float(np.std(actor_vaoi_advantages)), "max_abs_vaoi_advantage": float(np.max(np.abs(actor_vaoi_advantages))),
                 "critic_architecture": model.critic_architecture,
                 "critic_input_dim": model.critic_input_dim,
+                "actor_curvature_enabled": bool(model.actor_curvature_enabled),
+                "critic_curvature_enabled": bool(critic_config.get("include_curvature_features", True)),
+                "curvature_ablation_mode": bool(
+                    not model.actor_curvature_enabled
+                    and not critic_config.get("include_curvature_features", True)
+                ),
                 "critic_value_mean": float(np.mean(critic_value_matrix)),
                 "critic_value_std": float(np.std(critic_value_matrix)),
                 "critic_within_slot_value_std_mean": float(np.mean(np.std(critic_value_matrix, axis=1))),
@@ -738,6 +773,10 @@ def train_ctde(config_path: str):
                         "edge_input_dim": actor_config["edge_input_dim"], "message_dim": actor_config["message_dim"],
                         "aggregation": actor_config["aggregation"], "aggregated_message_dim": actor_config["aggregated_message_dim"],
                         "decoder_input_dim": actor_config["decoder_input_dim"], "directed_edge_count": edge_count,
+                        "mpnn_disabled_edge_feature": (
+                            "disabled_zero_placeholder"
+                            if not actor_config.get("use_curvature_edge_feature", False) else "none"
+                        ),
                         "mean_directed_degree": float(edge_count) / simulator.state.n_nodes,
                         "mean_edge_freshness_gain": float(np.mean(edge_features[:, 0])) if edge_count else 0.0,
                         "message_l2_mean": float(np.mean(np.linalg.norm(message, axis=1))) if edge_count else 0.0,
@@ -789,9 +828,21 @@ def train_ctde(config_path: str):
                           "curvature_stage1_single_alpha" if model.actor_stage == 1 else
                           "node_only_freshness_lagrangian_v3"),
         "actor": _json_safe(actor_config), "critic": _json_safe(critic_config),
+        "actor_curvature_enabled": bool(model.actor_curvature_enabled),
+        "critic_curvature_enabled": bool(critic_config.get("include_curvature_features", True)),
+        "curvature_ablation_mode": bool(
+            not model.actor_curvature_enabled
+            and not critic_config.get("include_curvature_features", True)
+        ),
         "critic_architecture": model.critic_architecture,
         "critic_input_dim": model.critic_input_dim,
         "critic_input_feature_names": list(model.critic_feature_names),
+        "mpnn_disabled_edge_feature": (
+            "disabled_zero_placeholder"
+            if actor_config.get("residual_architecture") == "mpnn"
+            and not actor_config.get("use_curvature_edge_feature", False)
+            else None
+        ),
         "common_mode_coefficient": common_mode_coefficient,
         "initial_checkpoint": initial_checkpoint,
         "restored_variables": list(restored_variables), "vaoi_reward_scale": vaoi_reward_scale,

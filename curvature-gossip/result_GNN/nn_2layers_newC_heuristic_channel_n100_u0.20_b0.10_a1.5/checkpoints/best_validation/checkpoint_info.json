@@ -1,0 +1,46 @@
+{
+  "actor": {
+    "architecture_version": "curvature_stage2_residual_v1",
+    "curvature": {
+      "alpha_init": 1.5,
+      "alpha_override": 1.5,
+      "alpha_parameterization": "softplus",
+      "center": 0.4012991820118967,
+      "score": "incident_bottleneck_max"
+    },
+    "input_feature_names": [
+      "normalized_degree",
+      "time_since_last_tx",
+      "consecutive_tx_attempts",
+      "congestion_ewma",
+      "self_information_increment",
+      "neighbor_freshness_mean",
+      "neighbor_freshness_max",
+      "neighbor_confidence_mean",
+      "detached_stage1_probability"
+    ],
+    "residual": {
+      "activation": "relu",
+      "architecture": "mlp",
+      "delta_max": 1.0,
+      "detach_stage1_reference": true,
+      "enabled": true,
+      "freeze_stage1": true,
+      "hidden_dims": [
+        64,
+        64
+      ],
+      "include_curvature_freshness_interaction": false,
+      "include_curvature_mean": false,
+      "include_scenario_context": false,
+      "use_stage1_reference": true,
+      "zero_init_output": true
+    },
+    "residual_architecture": "mlp",
+    "stage": 2
+  },
+  "checkpoint": "result_GNN\\nn_2layers_newC_heuristic_channel_n100_u0.20_b0.10_a1.5\\checkpoints\\best_validation\\model",
+  "config": "../../training_config.yaml",
+  "episode": 270,
+  "source_config": "configs/nn_2_layers/nn_2layers_newC_heuristic_channel.yaml"
+}

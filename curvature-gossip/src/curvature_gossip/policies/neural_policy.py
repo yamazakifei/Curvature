@@ -1,7 +1,10 @@
 """Load the node-only CTDE actor and produce decentralized broadcast probabilities."""
 
 from ..learning.ctde_ppo import CTDEPPO
-from ..learning.features import encode_observations, encode_stage1_observations, encode_stage2_observations
+from ..learning.features import (
+    encode_observations, encode_stage1_observations, encode_stage2_observations,
+    encode_stage2_mpnn_observations,
+)
 from ..simulator.observations import NodeObservation
 from .base import DistributedBroadcastPolicy
 
@@ -41,11 +44,23 @@ class NeuralCTDEPolicy(DistributedBroadcastPolicy):
         if self.model.actor_stage == 1:
             return encode_stage1_observations(observations, self.target_tx_ratio)
         if self.model.actor_stage == 2:
+            residual = self.actor.get("residual", {})
+            include_scenario_context = bool(residual.get("include_scenario_context", False))
+            use_curvature = bool(self.actor.get("curvature", {}).get("enabled", True))
+            if residual.get("architecture", "mlp") == "mpnn":
+                return encode_stage2_mpnn_observations(
+                    observations, self.target_tx_ratio, self.update_probability,
+                    self.consecutive_tx_scale, self.neighbor_confidence_time_constant,
+                    self.congestion_feature_scale, include_scenario_context,
+                    use_curvature_edge_feature=bool(residual.get("mpnn", {}).get("use_curvature_edge_feature", False)),
+                    bmax=float(residual.get("mpnn", {}).get("bmax", 1.0)),
+                    use_curvature=use_curvature,
+                )
             return encode_stage2_observations(
                 observations, self.target_tx_ratio, self.update_probability,
                 self.consecutive_tx_scale, self.neighbor_confidence_time_constant,
-                self.congestion_feature_scale,
-                bool(self.actor.get("residual", {}).get("include_scenario_context", False)),
+                self.congestion_feature_scale, include_scenario_context,
+                use_curvature=use_curvature,
             )
         return encode_observations(
             observations, self.target_tx_ratio, self.update_probability,

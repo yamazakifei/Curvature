@@ -66,10 +66,14 @@ class CTDEPPO:
             self.critic_include_channel_features = bool(
                 self.critic_config.get("include_channel_features", True)
             )
+            self.critic_include_curvature_features = bool(
+                self.critic_config.get("include_curvature_features", True)
+            )
             self.critic_feature_names = node_critic_feature_names(
                 self.critic_include_scenario_context,
                 self.critic_include_exact_node_features,
                 self.critic_include_channel_features,
+                self.critic_include_curvature_features,
             )
             self.critic_input_dim = int(self.critic_config.get("input_dim", len(self.critic_feature_names)))
             if self.critic_input_dim != len(self.critic_feature_names):
@@ -80,6 +84,11 @@ class CTDEPPO:
         self.actor_stage = int(self.actor_config.get("stage", 0))
         if self.actor_stage not in (0, 1, 2):
             raise ValueError("CTDEPPO supports legacy stage 0, Stage 1, or Stage 2 actors")
+        self.actor_curvature_enabled = bool(
+            dict(self.actor_config.get("curvature", {})).get("enabled", True)
+        )
+        if self.actor_stage == 1 and not self.actor_curvature_enabled:
+            raise ValueError("Stage 1 requires actor.curvature.enabled=true")
         self.tf = tensorflow.compat.v1
         self.tf.disable_v2_behavior()
         self.graph = self.tf.Graph()
@@ -104,13 +113,20 @@ class CTDEPPO:
         """Build the shared curvature base logit used by both hierarchical stages."""
         tf = self.tf
         curvature = dict(self.actor_config.get("curvature", {}))
-        center = float(curvature.get("center", 0.0))
+        # No-curvature ablations do not need the auto-calibrated center; avoid
+        # converting the literal ``auto`` into a float on this path.
+        center_value = curvature.get("center", 0.0)
+        center = 0.0 if not self.actor_curvature_enabled else float(center_value)
         override = curvature.get("alpha_override")
         if not np.isfinite(center):
             raise ValueError("actor.curvature.center must be finite")
         if override is not None and (not np.isfinite(float(override)) or float(override) < 0.0):
             raise ValueError("actor.curvature.alpha_override must be null or nonnegative")
-        self.curvature_scores = tf.placeholder(tf.float32, [None, 1], name="curvature_scores")
+        if self.actor_curvature_enabled:
+            self.curvature_scores = tf.placeholder(tf.float32, [None, 1], name="curvature_scores")
+        else:
+            # Keep alpha variables for checkpoint diagnostics, but disconnect curvature from forward pass.
+            self.curvature_scores = None
         self.target_tx_ratios = tf.placeholder(tf.float32, [None], name="target_tx_ratios")
         with tf.variable_scope("actor"):
             self.alpha_raw = tf.get_variable(
@@ -123,7 +139,10 @@ class CTDEPPO:
             )
             safe_b = tf.clip_by_value(self.target_tx_ratios, 1e-6, 1.0 - 1e-6)
             base_logit = tf.log(safe_b) - tf.log(1.0 - safe_b)
-            self.base_logits = base_logit + self.effective_alpha * (self.curvature_scores[:, 0] - center)
+            self.base_logits = (
+                base_logit + self.effective_alpha * (self.curvature_scores[:, 0] - center)
+                if self.actor_curvature_enabled else base_logit
+            )
             self.base_probabilities = tf.nn.sigmoid(self.base_logits, name="stage1_probability")
         self.alpha_override_active = override is not None
 
@@ -332,19 +351,37 @@ class CTDEPPO:
     def _encoded_feed(self, encoded):
         if self.actor_stage == 2:
             if self.residual_architecture == "mpnn":
-                return {self.curvature_scores: encoded.curvature_scores, self.target_tx_ratios: encoded.target_tx_ratios,
-                        self.mpnn_node_context: encoded.node_context, self.mpnn_edge_features: encoded.edge_features,
+                edge_features = np.asarray(encoded.edge_features, dtype=np.float32)
+                if not self.actor_curvature_enabled or not self.use_curvature_edge_feature:
+                    # Preserve the 3-column MPNN shape while hard-disabling the curvature column.
+                    edge_features = edge_features.copy()
+                    edge_features[:, 2] = 0.0
+                feed = {self.target_tx_ratios: encoded.target_tx_ratios,
+                        self.mpnn_node_context: encoded.node_context, self.mpnn_edge_features: edge_features,
                         self.mpnn_edge_receivers: encoded.edge_index[1]}
-            return {self.curvature_scores: encoded.curvature_scores, self.target_tx_ratios: encoded.target_tx_ratios,
-                    self.residual_context: encoded.residual_context}
+            else:
+                feed = {self.target_tx_ratios: encoded.target_tx_ratios,
+                        self.residual_context: encoded.residual_context}
+            if self.actor_curvature_enabled:
+                feed[self.curvature_scores] = encoded.curvature_scores
+            return feed
         if self.actor_stage == 1:
             return {self.curvature_scores: encoded.curvature_scores, self.target_tx_ratios: encoded.target_tx_ratios}
         return {self.node_features: encoded.node_features}
 
     def actor_batch_inputs(self, encoded_steps):
+        def step_node_count(item):
+            if self.actor_stage == 2 and self.residual_architecture == "mpnn":
+                return item.node_context.shape[0]
+            if self.actor_stage == 2:
+                return item.residual_context.shape[0]
+            if self.actor_stage == 1:
+                return item.curvature_scores.shape[0]
+            return item.node_features.shape[0]
+
         step_ids = np.concatenate([
             np.full(
-                (item.curvature_scores if self.actor_stage in (1, 2) else item.node_features).shape[0],
+                step_node_count(item),
                 index, dtype=np.int32,
             )
             for index, item in enumerate(encoded_steps)
@@ -355,16 +392,25 @@ class CTDEPPO:
                 node_counts = [item.node_context.shape[0] for item in encoded_steps]
                 offsets = np.cumsum([0] + node_counts[:-1]).astype(np.int32)
                 edge_indices = [item.edge_index + offset for item, offset in zip(encoded_steps, offsets)]
-                return {"curvature_scores": np.concatenate([item.curvature_scores for item in encoded_steps]),
-                        "target_tx_ratios": np.concatenate([item.target_tx_ratios for item in encoded_steps]),
+                edge_features = np.concatenate([item.edge_features for item in encoded_steps]).astype(np.float32, copy=False)
+                if not self.actor_curvature_enabled or not self.use_curvature_edge_feature:
+                    # Keep the fixed edge width and zero the disabled feature before batching.
+                    edge_features = edge_features.copy()
+                    edge_features[:, 2] = 0.0
+                batch = {"target_tx_ratios": np.concatenate([item.target_tx_ratios for item in encoded_steps]),
                         "node_context": np.concatenate([item.node_context for item in encoded_steps]),
                         "edge_index": np.concatenate(edge_indices, axis=1).astype(np.int32, copy=False),
-                        "edge_features": np.concatenate([item.edge_features for item in encoded_steps]).astype(np.float32, copy=False),
+                        "edge_features": edge_features,
                         "step_ids": step_ids, "number_of_steps": number_of_steps}
-            return {"curvature_scores": np.concatenate([item.curvature_scores for item in encoded_steps]),
-                    "target_tx_ratios": np.concatenate([item.target_tx_ratios for item in encoded_steps]),
+                if self.actor_curvature_enabled:
+                    batch["curvature_scores"] = np.concatenate([item.curvature_scores for item in encoded_steps])
+                return batch
+            batch = {"target_tx_ratios": np.concatenate([item.target_tx_ratios for item in encoded_steps]),
                     "residual_context": np.concatenate([item.residual_context for item in encoded_steps]),
                     "step_ids": step_ids, "number_of_steps": number_of_steps}
+            if self.actor_curvature_enabled:
+                batch["curvature_scores"] = np.concatenate([item.curvature_scores for item in encoded_steps])
+            return batch
         if self.actor_stage == 1:
             return {"curvature_scores": np.concatenate([item.curvature_scores for item in encoded_steps]),
                     "target_tx_ratios": np.concatenate([item.target_tx_ratios for item in encoded_steps])}
@@ -373,11 +419,20 @@ class CTDEPPO:
     def _actor_batch_feed(self, batch):
         if self.actor_stage == 2:
             if self.residual_architecture == "mpnn":
-                return {self.curvature_scores: batch["curvature_scores"], self.target_tx_ratios: batch["target_tx_ratios"],
-                        self.mpnn_node_context: batch["node_context"], self.mpnn_edge_features: batch["edge_features"],
+                edge_features = np.asarray(batch["edge_features"], dtype=np.float32)
+                if not self.actor_curvature_enabled or not self.use_curvature_edge_feature:
+                    # Apply the same guard to PPO update feeds as to inference feeds.
+                    edge_features = edge_features.copy()
+                    edge_features[:, 2] = 0.0
+                feed = {self.target_tx_ratios: batch["target_tx_ratios"],
+                        self.mpnn_node_context: batch["node_context"], self.mpnn_edge_features: edge_features,
                         self.mpnn_edge_receivers: batch["edge_index"][1]}
-            return {self.curvature_scores: batch["curvature_scores"], self.target_tx_ratios: batch["target_tx_ratios"],
-                    self.residual_context: batch["residual_context"]}
+            else:
+                feed = {self.target_tx_ratios: batch["target_tx_ratios"],
+                        self.residual_context: batch["residual_context"]}
+            if self.actor_curvature_enabled:
+                feed[self.curvature_scores] = batch["curvature_scores"]
+            return feed
         if self.actor_stage == 1:
             return {self.curvature_scores: batch["curvature_scores"], self.target_tx_ratios: batch["target_tx_ratios"]}
         return {self.node_features: batch["node_features"]}

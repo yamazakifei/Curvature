@@ -171,9 +171,12 @@ def _run_neural_scenario(
                     *encoder_args,
                     use_curvature_edge_feature=bool(residual.get("mpnn", {}).get("use_curvature_edge_feature", False)),
                     bmax=float(residual.get("mpnn", {}).get("bmax", 1.0)),
+                    use_curvature=model.actor_curvature_enabled,
                 )
             else:
-                encoded = encode_stage2_observations(*encoder_args)
+                encoded = encode_stage2_observations(
+                    *encoder_args, use_curvature=model.actor_curvature_enabled
+                )
         else:
             encoded = encode_observations(
                 observations, scenario.target_tx_ratio, scenario.update_probability,

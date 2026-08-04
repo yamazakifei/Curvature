@@ -27,7 +27,8 @@ from curvature_gossip.channel import ChannelParameters, PropagationModel
 from curvature_gossip.curvature import bottleneck_importance
 from curvature_gossip.experiments.runner import _curvature_provider
 from curvature_gossip.learning.ctde_ppo import CTDEPPO, resolve_learning_rates
-from curvature_gossip.learning.features import encode_stage2_observations
+from curvature_gossip.learning.features import encode_stage2_observations, encode_stage2_mpnn_observations
+from curvature_gossip.learning.trainer import _critic_config, _stage1_actor_config
 from curvature_gossip.random_streams import make_rng
 from curvature_gossip.simulator import GossipSimulator, SimulationParameters
 from curvature_gossip.topology import get_topology_generator
@@ -99,15 +100,25 @@ def evaluate_seed(model, sweep_raw, model_raw, topology_seed, channel_seed, upda
     probability_steps = []
     for slot in range(simulator.parameters.slots):
         observations = simulator.begin_step(slot)
-        encoded = encode_stage2_observations(
+        use_curvature = bool(model_raw.get("actor", {}).get("curvature", {}).get("enabled", True))
+        encoder_args = (
             observations,
             simulator.parameters.target_tx_ratio,
             simulator.parameters.update_probability,
             float(model_raw.get("observation", {}).get("consecutive_tx_scale", 3.0)),
             float(model_raw.get("observation", {}).get("neighbor_confidence_time_constant", 20.0)),
-            float(observation.get("congestion_feature_scale", 5.0)),
+            float(model_raw.get("observation", {}).get("congestion_feature_scale", 5.0)),
             bool(residual.get("include_scenario_context", False)),
         )
+        if residual.get("architecture", "mlp") == "mpnn":
+            encoded = encode_stage2_mpnn_observations(
+                *encoder_args,
+                use_curvature_edge_feature=bool(residual.get("mpnn", {}).get("use_curvature_edge_feature", False)),
+                bmax=float(residual.get("mpnn", {}).get("bmax", 1.0)),
+                use_curvature=use_curvature,
+            )
+        else:
+            encoded = encode_stage2_observations(*encoder_args, use_curvature=use_curvature)
         probabilities = np.asarray(model.predict_probabilities(encoded), dtype=float)
         if probabilities.shape != (topology.graph.number_of_nodes(),) or not np.isfinite(probabilities).all():
             raise RuntimeError("model returned invalid probabilities on topology seed {}".format(topology_seed))
@@ -198,7 +209,8 @@ def main():
     topology_seeds = list(sweep_raw["experiment"]["topology_seeds"])
     channel_seed = int(sweep_raw["experiment"]["channel_seeds"][0])
     update_seed = int(sweep_raw["experiment"]["update_seeds"][0])
-    actor = model_raw["actor"]
+    actor = _stage1_actor_config(model_raw)
+    critic = _critic_config(model_raw)
     actor_learning_rate, critic_learning_rate = resolve_learning_rates(model_raw.get("training", {}))
     model = CTDEPPO(
         learning_rate=float(model_raw.get("training", {}).get("learning_rate", 3e-4)),
@@ -206,7 +218,7 @@ def main():
         critic_learning_rate=critic_learning_rate,
         clip_ratio=float(model_raw.get("training", {}).get("clip_ratio", 0.2)),
         entropy_coefficient=float(model_raw.get("training", {}).get("entropy_coefficient", 0.0)),
-        seed=int(model_raw["experiment"]["master_seed"]), actor_config=actor,
+        seed=int(model_raw["experiment"]["master_seed"]), actor_config=actor, critic_config=critic,
     )
     try:
         model.restore(str(model_dir / args.checkpoint))

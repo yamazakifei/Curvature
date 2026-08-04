@@ -30,7 +30,7 @@ def _no_curvature_actor():
     """Build the strict ablation: a uniform logit anchor plus local residual context."""
     return {
         "stage": 2,
-        "curvature": {"center": 0.4, "alpha_init": 1.5, "alpha_override": 0.0},
+        "curvature": {"enabled": False, "center": 0.4, "alpha_init": 1.5, "alpha_override": 0.0},
         "residual": {
             "enabled": True, "hidden_dims": [64, 64], "delta_max": 1.0,
             "include_scenario_context": False, "freeze_stage1": True,
@@ -95,6 +95,7 @@ def test_no_curvature_config_records_a_distinct_architecture_and_rejects_leakage
     raw = {"actor": _no_curvature_actor()}
     actor = _stage1_actor_config(raw)
     assert actor["architecture_version"] == "no_curvature_stage2_residual_v1"
+    assert actor["curvature_enabled"] is False
     assert actor["input_feature_names"] == [
         "normalized_degree", "time_since_last_tx", "consecutive_tx_attempts",
         "congestion_ewma", "self_information_increment", "neighbor_freshness_mean",
