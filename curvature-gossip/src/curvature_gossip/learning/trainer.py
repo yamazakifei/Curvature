@@ -22,6 +22,8 @@ from ..random_streams import make_rng
 from ..simulator import GossipSimulator, SimulationParameters
 from ..topology import get_topology_generator
 from .ctde_ppo import CTDEPPO, resolve_learning_rates
+from .seed_plan import build_seed_manifest
+from .stage1_search import run_stage1_search
 from .features import (
     encode_curvature_score, encode_global_state, encode_observations,
     encode_stage1_observations, encode_stage2_observations, encode_stage2_mpnn_observations,
@@ -49,6 +51,7 @@ def _build_simulator(raw: Mapping, episode: int, target_tx_ratio: float, node_co
     experiment = raw["experiment"]
     training = raw.get("training", {})
     master_seed = int(experiment.get("master_seed", 0))
+    derived_mode = str(raw.get("randomness", {}).get("mode", "legacy_explicit")) == "derived_namespaces"
     topology_seed = int(training.get("topology_seed_start", 10000)) + int(episode)
     generator = get_topology_generator(raw["topology"]["type"])
     topology_params = dict(raw["topology"].get("params", {}))
@@ -57,12 +60,20 @@ def _build_simulator(raw: Mapping, episode: int, target_tx_ratio: float, node_co
         topology_params["n_nodes"] = n_nodes
         if "cluster_sizes" in topology_params:
             topology_params["cluster_sizes"] = [n_nodes // 2, n_nodes - n_nodes // 2]
-    topology = generator.generate(make_rng(master_seed, "nn_topology", topology_seed), topology_params)
+    topology_rng = (
+        make_rng(master_seed, "stage2_training", "topology", int(episode))
+        if derived_mode else make_rng(master_seed, "nn_topology", topology_seed)
+    )
+    topology = generator.generate(topology_rng, topology_params)
     curvature_config = raw.get("curvature", {})
     curvature = _curvature_provider(curvature_config).compute(topology)
     importance = bottleneck_importance(topology, curvature, curvature_config.get("normalization", "local_degree_bound"))
     channel = ChannelParameters.from_mapping(raw.get("channel", {}))
-    propagation = PropagationModel(topology.positions, channel, make_rng(master_seed, "nn_shadowing", topology_seed))
+    propagation_rng = (
+        make_rng(master_seed, "stage2_training", "shadowing", int(episode))
+        if derived_mode else make_rng(master_seed, "nn_shadowing", topology_seed)
+    )
+    propagation = PropagationModel(topology.positions, channel, propagation_rng)
     constraints = raw.get("constraints", {})
     observation = raw.get("observation", {})
     rollout_slots = int(training.get("rollout_slots", experiment.get("slots", 200)))
@@ -75,11 +86,21 @@ def _build_simulator(raw: Mapping, episode: int, target_tx_ratio: float, node_co
         congestion_ewma_beta=float(observation.get("congestion_ewma_beta", 0.8)),
         congestion_feature_scale=float(observation.get("congestion_feature_scale", 5.0)),
     )
+    update_rng = (
+        make_rng(master_seed, "stage2_training", "source_updates", int(episode))
+        if derived_mode else make_rng(master_seed, "nn_updates", topology_seed)
+    )
+    fading_rng = (
+        make_rng(master_seed, "stage2_training", "fading", int(episode))
+        if derived_mode else make_rng(master_seed, "nn_fading", topology_seed)
+    )
+    policy_rng = (
+        make_rng(master_seed, "stage2_training", "actions", int(episode))
+        if derived_mode else make_rng(master_seed, "nn_policy", topology_seed)
+    )
     simulator = GossipSimulator(
         topology, curvature, importance, propagation, UniformRandomPolicy(0.0), parameters,
-        make_rng(master_seed, "nn_updates", topology_seed),
-        make_rng(master_seed, "nn_fading", topology_seed),
-        make_rng(master_seed, "nn_policy", topology_seed),
+        update_rng, fading_rng, policy_rng,
     )
     return simulator, curvature
 
@@ -380,7 +401,25 @@ def train_ctde(config_path: str):
     """Train and save a V3 checkpoint, metadata, and per-rollout diagnostics."""
     config = load_config(config_path)
     raw = config.raw
+    training = raw.get("training", {})
+    constraints = raw.get("constraints", {})
+    output_root = Path(raw.get("output", {}).get("root", "result_NN"))
+    output_directory = output_root / str(raw["experiment"].get("id", "nn_ctde_v3"))
+    output_directory.mkdir(parents=True, exist_ok=True)
+
+    # Resolve all automatic pools before model creation and persist the exact plan.
+    seed_manifest = build_seed_manifest(raw)
+    with (output_directory / "resolved_seed_manifest.json").open("w", encoding="utf-8") as stream:
+        json.dump(seed_manifest, stream, indent=2, sort_keys=True)
+
+    search_result = run_stage1_search(raw, output_directory)
     actor_config = _stage1_actor_config(raw)
+    if search_result:
+        actor_config = dict(actor_config)
+        actor_curvature = dict(actor_config.get("curvature", {}))
+        actor_curvature.update(search_result)
+        actor_config["curvature"] = actor_curvature
+        raw["actor"] = actor_config
     critic_config = _critic_config(raw)
     if (int(actor_config.get("stage", 0)) in (1, 2)
             and bool(actor_config.get("curvature", {}).get("enabled", True))):
@@ -391,12 +430,9 @@ def train_ctde(config_path: str):
     elif int(actor_config.get("stage", 0)) == 2:
         # No-curvature runs must not spend startup time computing a curvature center.
         raw["actor"] = actor_config
-    training = raw.get("training", {})
-    constraints = raw.get("constraints", {})
-    output_root = Path(raw.get("output", {}).get("root", "result_NN"))
-    output_directory = output_root / str(raw["experiment"].get("id", "nn_ctde_v3"))
-    output_directory.mkdir(parents=True, exist_ok=True)
     with (output_directory / "training_config.yaml").open("w", encoding="utf-8") as stream:
+        yaml.safe_dump(dict(raw), stream, sort_keys=False, allow_unicode=True)
+    with (output_directory / "resolved_training_config.yaml").open("w", encoding="utf-8") as stream:
         yaml.safe_dump(dict(raw), stream, sort_keys=False, allow_unicode=True)
 
     vaoi_reward_scale = float(training.get("vaoi_reward_scale", 0.1))
@@ -461,12 +497,12 @@ def train_ctde(config_path: str):
             if bool(training.get("restore_actor_only", False))
             else model.restore_compatible(str(initial_checkpoint))
         )
-    action_rng = np.random.default_rng(seed + 7919)
-    targets = [float(value) for value in training.get("target_tx_ratios", [constraints.get("target_tx_ratio", 0.1)])]
+    action_rng = make_rng(seed, "stage2_training", "actions", "ppo_actor") if str(raw.get("randomness", {}).get("mode", "legacy_explicit")) == "derived_namespaces" else np.random.default_rng(seed + 7919)
+    targets = [float(value) for value in training.get("max_tx_ratios", [constraints.get("max_tx_ratio", 0.1)])]
     node_counts = list(training.get("node_counts", [None])) or [None]
     update_probabilities = list(training.get("update_probabilities", [None])) or [None]
     if not targets or any(not 0.0 < value <= 1.0 for value in targets):
-        raise ValueError("training.target_tx_ratios must contain values in (0, 1]")
+        raise ValueError("training.max_tx_ratios must contain values in (0, 1]")
     training_cases = [(target, node_count, update_probability) for node_count in node_counts for update_probability in update_probabilities for target in targets]
     constraint_state = {}
     history = []

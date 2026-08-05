@@ -15,6 +15,7 @@ from ..curvature import bottleneck_importance
 from ..experiments.runner import _curvature_provider
 from ..policies.random_policy import UniformRandomPolicy
 from ..random_streams import make_rng
+from .seed_plan import derived_seed
 from ..simulator import GossipSimulator, SimulationParameters
 from ..topology import get_topology_generator
 from .features import (
@@ -47,8 +48,11 @@ def _require_probability(name: str, value: Any, strict_lower: bool = False) -> f
 
 
 def validation_scenarios(raw: Mapping) -> Tuple[ValidationScenario, ...]:
-    """Parse the configuration-owned validation set without consulting training cases."""
+    """解析固定验证池，支持新 auto 模式和旧 explicit 场景列表。"""
     section = raw.get("validation", {})
+    generation = section.get("scenario_generation")
+    if isinstance(generation, Mapping) and str(generation.get("mode", "explicit")) == "auto":
+        return _auto_validation_scenarios(raw, generation)
     entries = section.get("scenarios", [])
     if not isinstance(entries, list) or not entries:
         raise ValueError("validation.scenarios must be a nonempty list")
@@ -78,6 +82,41 @@ def validation_scenarios(raw: Mapping) -> Tuple[ValidationScenario, ...]:
             target_tx_ratio=_require_probability("validation target_tx_ratio", entry["target_tx_ratio"], True),
         ))
     return tuple(scenarios)
+
+
+def _auto_validation_scenarios(raw: Mapping, generation: Mapping) -> Tuple[ValidationScenario, ...]:
+    """只生成一次配置确定的场景定义；后续 checkpoint 评估会重复使用它们。"""
+    master_seed = int(raw.get("experiment", {}).get("master_seed", 0))
+    count = int(generation.get("scenario_count", 20))
+    slots = int(generation.get("slots", raw.get("experiment", {}).get("slots", 200)))
+    n_nodes = int(generation.get("n_nodes", raw.get("topology", {}).get("params", {}).get("n_nodes", 20)))
+    update_probability = _require_probability(
+        "validation auto update_probability",
+        generation.get("update_probability", raw.get("source", {}).get("update_probability", 0.05)),
+    )
+    constraints = raw.get("constraints", {})
+    target = _require_probability(
+        "validation auto max_tx_ratio",
+        generation.get("max_tx_ratio", constraints.get("max_tx_ratio", constraints.get("target_tx_ratio", 0.1))),
+        True,
+    )
+    if count < 1 or slots < 1 or n_nodes < 2:
+        raise ValueError("validation auto scenario_count/slots/n_nodes are invalid")
+    return tuple(
+        ValidationScenario(
+            scenario_id="auto_{:03d}".format(index),
+            topology_seed=derived_seed(master_seed, "fixed_validation", "topology", index),
+            source_update_seed=derived_seed(master_seed, "fixed_validation", "source_updates", index),
+            channel_shadowing_seed=derived_seed(master_seed, "fixed_validation", "shadowing", index),
+            channel_fading_seed=derived_seed(master_seed, "fixed_validation", "fading", index),
+            policy_action_seed=derived_seed(master_seed, "fixed_validation", "actions", index),
+            slots=slots,
+            n_nodes=n_nodes,
+            update_probability=update_probability,
+            target_tx_ratio=target,
+        )
+        for index in range(count)
+    )
 
 
 def probability_statistics(probability_steps: Sequence[np.ndarray]) -> Dict[str, float]:

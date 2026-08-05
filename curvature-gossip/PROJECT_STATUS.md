@@ -155,3 +155,78 @@ geometric N=100 scenarios. The evaluation uses the existing 200-slot
 `result_GNN/0804Scalability_N/configs/random/n100.yaml` configuration and
 stores the three-model comparison under
 `result_GNN/mpnnV3_heuristic_channel_n100_u0.20_b0.10_a1.5/random_n100_generalization/`.
+
+## Ch1 model on u=0.10 scalability scenarios (2026-08-05)
+
+Added `scripts/compare_ch1_model_on_update_probability_u10.py` to evaluate
+`mpnnV3_ch1_budget_n100_u0.10_b0.10_a1.5_lowLR` on the existing community and
+random-geometric u=0.10 configurations and seeds. Each topology uses five
+500-slot scenarios. The comparison includes the new ch1 curvature model,
+the existing topology-specific curvature model, the no-curvature model, and
+the existing matched-random rows. Outputs are stored under
+`result_GNN/0804Scalability_u/u0.1_gap_comparison_budget_model/`.
+
+## u=0.10 retraining configuration consistency check (2026-08-05)
+
+Compared `configs/GNN/mpnn_newC_heuristic_channel.yaml` with the saved
+community-structure `result_GNN/0804Scalability_u/configs/community/u10.yaml`.
+The topology, source update probability, channel, curvature definition,
+transmission constraints, observation features, and 500-slot horizon are
+consistent. The validation seeds are intentionally different: the training
+configuration uses ten `v00`-`v09` scenarios, while the scalability test uses
+five `u0.10_s00`-`s04` scenarios.
+
+The `0804Scalability_u` sweep itself does not use the budget model: its
+curvature baselines are `mpnnV3_heuristic_channel_n100_u0.20_b0.10_a1.5_lowLR`
+and `mpnnV3_random_n100_u0.20_b0.10_a1.5_lowLR`; both saved training
+configurations use `use_budget_advantage: false` and `update_multiplier: false`.
+The separate `mpnnV3_ch1_budget_n100_u0.10_b0.10_a1.5_lowLR` comparison is a
+different experiment and should not be used to characterize the u-sweep
+baseline.
+
+## Ch1 no-budget model comparison at u=0.10 (2026-08-05)
+
+Extended `scripts/compare_ch1_model_on_update_probability_u10.py` with
+`--model-dir` and `--output-dir` overrides so the same paired evaluation can
+be reused for different Ch1 checkpoints. The script now also annotates the
+aggregate VAoI bars with the mean actor broadcast probability `p`.
+
+Evaluated `mpnnV3_ch1_n100_u0.10_b0.10_a1.5_lowLR` at its best-validation
+checkpoint (episode 160) on the same five community and five random-geometric
+u=0.10 scenarios used by `0804Scalability_u`. The new results are stored in
+`result_GNN/0804Scalability_u/u0.1_gap_comparison_NObudget_model/`, including
+PNG/PDF figures, per-scenario and summary CSVs, copied test YAMLs, and
+metadata.
+
+The no-budget Ch1 model obtains mean VAoI 2.848 (mean p=0.128) on community
+topologies and 2.472 (mean p=0.132) on random-geometric topologies. Relative
+to the no-curvature baseline, the VAoI reduction is 4.98% and 0.02%,
+respectively; the existing curvature models reduce VAoI by 8.31% and 3.00%.
+
+## Stage-1 Bmax-decoupled base search (2026-08-04)
+
+Implemented the Stage-1 curvature-only coarse-to-fine search described in
+`CODEX_STAGE1_BASE_SEARCH_MODIFICATION_PLAN_0804.md`. The new
+`learning/stage1_search.py` calibrates one pooled `beta0` per `(b, alpha)`
+candidate using a public `c_kappa` center, evaluates each alpha's local b
+interval on paired simulator realizations, and injects the selected frozen
+parameters into the Stage-2 Actor. `constraints.max_tx_ratio` is now Bmax and
+does not directly determine the Stage-1 logit when `base_tx_ratio` or
+`calibrated_intercept` is present.
+
+`learning/seed_plan.py` writes the four-pool namespace/index manifest. Automatic
+validation scenarios are generated once from `fixed_validation` and are reused
+for every checkpoint; explicit `validation.scenarios` remains supported. The
+recommended entry point is `configs/GNN/mpnn_newC_ch1_search.yaml`. Search
+outputs include calibration JSON, aggregate/per-scenario CSVs, a search summary,
+`resolved_seed_manifest.json`, and `resolved_training_config.yaml`.
+
+Added unit coverage in `tests/test_stage1_base_search.py` and
+`tests/test_seed_plan.py`, plus an Actor assertion that changing the Bmax
+feature does not alter a fixed Stage-1 base probability. Existing Stage-1,
+Stage-2 Actor and MPNN tests continue to pass; TensorFlow emits its existing
+deprecation warnings in this Python 3.7 environment.
+
+After Stage-1 search completes, the terminal now prints the selected `b`,
+`alpha`, `beta0`, `c_kappa`, search mean probability, actual transmission
+ratio, mean VAoI, feasibility, and the output directory.

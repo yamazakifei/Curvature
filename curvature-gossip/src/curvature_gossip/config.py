@@ -3,12 +3,65 @@
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Mapping
+import copy
+import warnings
 
 import yaml
 
 
 class ConfigError(ValueError):
     """表示配置缺项、类型错误或取值越界。"""
+
+
+def normalize_training_config(raw: Mapping[str, Any]) -> Dict[str, Any]:
+    """规范化 Bmax 与 Stage-1 基础概率，并保留旧 YAML 的兼容语义。
+
+    新配置使用 ``constraints.max_tx_ratio`` 和
+    ``actor.curvature.base_tx_ratio``。旧配置的 ``target_tx_ratio`` 仍被
+    解释为 Bmax；只有在没有显式基础概率时才把 Bmax 作为旧行为回退值。
+    """
+    resolved = copy.deepcopy(dict(raw))
+    constraints = dict(resolved.get("constraints", {}))
+    training = dict(resolved.get("training", {}))
+    actor = dict(resolved.get("actor", {}))
+    curvature = dict(actor.get("curvature", {}))
+
+    if "max_tx_ratio" not in constraints:
+        if "target_tx_ratio" in constraints:
+            constraints["max_tx_ratio"] = constraints["target_tx_ratio"]
+            warnings.warn(
+                "旧字段 constraints.target_tx_ratio 已兼容为 Bmax；建议改用 constraints.max_tx_ratio。",
+                UserWarning,
+                stacklevel=2,
+            )
+        else:
+            # Legacy non-NN experiments historically defaulted to an unconstrained rate.
+            constraints["max_tx_ratio"] = 1.0
+
+    if "max_tx_ratios" not in training:
+        if "target_tx_ratios" in training:
+            training["max_tx_ratios"] = training["target_tx_ratios"]
+            warnings.warn(
+                "旧字段 training.target_tx_ratios 已兼容为 Bmax 列表；建议改用 training.max_tx_ratios。",
+                UserWarning,
+                stacklevel=2,
+            )
+        else:
+            training["max_tx_ratios"] = [constraints["max_tx_ratio"]]
+
+    if "base_tx_ratio" not in curvature:
+        curvature["base_tx_ratio"] = constraints["max_tx_ratio"]
+        warnings.warn(
+            "未配置 actor.curvature.base_tx_ratio，已回退为 Bmax 以保持旧行为。",
+            UserWarning,
+            stacklevel=2,
+        )
+
+    actor["curvature"] = curvature
+    resolved["constraints"] = constraints
+    resolved["training"] = training
+    resolved["actor"] = actor
+    return resolved
 
 
 @dataclass(frozen=True)
@@ -65,7 +118,7 @@ def load_config(path: str) -> ProjectConfig:
         experiment=dict(experiment),
         topology=TopologyConfig(topology_type, dict(params)),
         output=dict(output),
-        raw=dict(raw),
+        raw=normalize_training_config(raw),
     )
 
 
@@ -76,4 +129,3 @@ def config_to_dict(config: ProjectConfig) -> Dict[str, Any]:
         "topology": {"type": config.topology.type, "params": dict(config.topology.params)},
         "output": dict(config.output),
     }
-

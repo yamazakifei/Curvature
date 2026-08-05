@@ -1,0 +1,27 @@
+{
+  "baseline_rows": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Scalability_u\\update_probability_per_scenario.csv",
+  "ch1_checkpoint_episode": 190,
+  "ch1_model_dir": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\mpnnV3_ch1_budget_n100_u0.10_b0.10_a1.5_lowLR",
+  "comparison_order": [
+    "ch1_curvature",
+    "baseline_curvature",
+    "no_curvature",
+    "matched_random"
+  ],
+  "configs": {
+    "community": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Scalability_u\\ch1_u10_comparison\\u10_community_config.yaml",
+    "random": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Scalability_u\\ch1_u10_comparison\\u10_random_config.yaml"
+  },
+  "node_count": 100,
+  "plots": [
+    "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Scalability_u\\ch1_u10_comparison\\ch1_u10_comparison.png",
+    "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Scalability_u\\ch1_u10_comparison\\ch1_u10_comparison.pdf"
+  ],
+  "scenarios_per_topology": 5,
+  "slots_per_scenario": 500,
+  "topologies": [
+    "community",
+    "random"
+  ],
+  "update_probability": 0.1
+}

@@ -72,6 +72,34 @@ def test_stage2_fixed_alpha_stays_fixed_while_residual_output_learns():
         model.close()
 
 
+def test_bmax_feature_does_not_change_fixed_stage1_base_probability():
+    actor = _actor()
+    actor["curvature"]["base_tx_ratio"] = 0.1
+    model = CTDEPPO(seed=21, actor_config=actor)
+    try:
+        first = _encoded()
+        second = Stage2EncodedObservations(
+            curvature_scores=first.curvature_scores,
+            target_tx_ratios=np.full(3, 0.2, dtype=np.float32),
+            residual_context=first.residual_context,
+        )
+        assert np.allclose(
+            model.stage2_diagnostics(first)["q_base"],
+            model.stage2_diagnostics(second)["q_base"],
+        )
+        actor["curvature"]["calibrated_intercept"] = float(np.log(0.2 / 0.8))
+        other = CTDEPPO(seed=22, actor_config=actor)
+        try:
+            assert not np.allclose(
+                model.stage2_diagnostics(first)["q_base"],
+                other.stage2_diagnostics(first)["q_base"],
+            )
+        finally:
+            other.close()
+    finally:
+        model.close()
+
+
 def test_no_curvature_stage2_has_eight_context_inputs_and_ignores_curvature_scores():
     model = CTDEPPO(seed=31, actor_config=_no_curvature_actor())
     try:

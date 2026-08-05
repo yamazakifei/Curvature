@@ -110,7 +110,11 @@ class CTDEPPO:
         return float(np.log(np.expm1(value)))
 
     def _build_curvature_base(self):
-        """Build the shared curvature base logit used by both hierarchical stages."""
+        """Build the shared Stage-1 base logit used by both hierarchical stages.
+
+        ``max_tx_ratio`` remains a scenario/budget feature.  A calibrated
+        intercept or explicit ``base_tx_ratio`` controls the Stage-1 center.
+        """
         tf = self.tf
         curvature = dict(self.actor_config.get("curvature", {}))
         # No-curvature ablations do not need the auto-calibrated center; avoid
@@ -137,8 +141,26 @@ class CTDEPPO:
                 tf.constant(float(override), dtype=tf.float32, name="alpha_override")
                 if override is not None else self.alpha_kappa
             )
-            safe_b = tf.clip_by_value(self.target_tx_ratios, 1e-6, 1.0 - 1e-6)
-            base_logit = tf.log(safe_b) - tf.log(1.0 - safe_b)
+            configured_intercept = curvature.get("calibrated_intercept")
+            configured_base = curvature.get("base_tx_ratio")
+            if configured_intercept is not None:
+                configured_intercept = float(configured_intercept)
+                if not np.isfinite(configured_intercept):
+                    raise ValueError("actor.curvature.calibrated_intercept must be finite")
+                base_intercept = configured_intercept
+            elif configured_base is not None:
+                configured_base = float(configured_base)
+                if not np.isfinite(configured_base) or not 0.0 < configured_base <= 1.0:
+                    raise ValueError("actor.curvature.base_tx_ratio must be in (0, 1]")
+                safe_base = float(np.clip(configured_base, 1e-6, 1.0 - 1e-6))
+                base_intercept = float(np.log(safe_base) - np.log1p(-safe_base))
+            else:
+                # Legacy models use the per-scenario target as their base center.
+                safe_b = tf.clip_by_value(self.target_tx_ratios, 1e-6, 1.0 - 1e-6)
+                base_logit = tf.log(safe_b) - tf.log(1.0 - safe_b)
+                base_intercept = None
+            if base_intercept is not None:
+                base_logit = tf.ones_like(self.target_tx_ratios) * float(base_intercept)
             self.base_logits = (
                 base_logit + self.effective_alpha * (self.curvature_scores[:, 0] - center)
                 if self.actor_curvature_enabled else base_logit

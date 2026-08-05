@@ -1,0 +1,41 @@
+topology,topology_label,scenario_id,model_key,model_label,source,policy,node_count,slots,update_probability,target_tx_ratio,mean_VAoI,actual_tx_ratio,action_prob_mean,action_prob_std
+community,Community topology,u0.10_s00,ch1_curvature,Ch1 curvature MPNN,new_ch1_model,nn,100,500,0.1,0.1,2.8530262626262646,0.1282,0.12682917714118958,0.08098841458559036
+community,Community topology,u0.10_s01,ch1_curvature,Ch1 curvature MPNN,new_ch1_model,nn,100,500,0.1,0.1,2.834540404040405,0.12658,0.12649375200271606,0.08209841698408127
+community,Community topology,u0.10_s02,ch1_curvature,Ch1 curvature MPNN,new_ch1_model,nn,100,500,0.1,0.1,2.9380701010100996,0.13182,0.12959137558937073,0.08462008833885193
+community,Community topology,u0.10_s03,ch1_curvature,Ch1 curvature MPNN,new_ch1_model,nn,100,500,0.1,0.1,2.969110909090909,0.12689999999999999,0.12720954418182373,0.08315365016460419
+community,Community topology,u0.10_s04,ch1_curvature,Ch1 curvature MPNN,new_ch1_model,nn,100,500,0.1,0.1,2.6452830303030312,0.12828,0.12950240075588226,0.08295205235481262
+random,Random-geometric topology,u0.10_s00,ch1_curvature,Ch1 curvature MPNN,new_ch1_model,nn,100,500,0.1,0.1,2.260116363636365,0.13382,0.13212130963802338,0.08339996635913849
+random,Random-geometric topology,u0.10_s01,ch1_curvature,Ch1 curvature MPNN,new_ch1_model,nn,100,500,0.1,0.1,2.3923535353535352,0.13492,0.13442254066467285,0.08613838255405426
+random,Random-geometric topology,u0.10_s02,ch1_curvature,Ch1 curvature MPNN,new_ch1_model,nn,100,500,0.1,0.1,2.607368686868687,0.12932,0.13058353960514069,0.08414507657289505
+random,Random-geometric topology,u0.10_s03,ch1_curvature,Ch1 curvature MPNN,new_ch1_model,nn,100,500,0.1,0.1,2.7156256565656567,0.12890000000000001,0.12988758087158203,0.0843869224190712
+random,Random-geometric topology,u0.10_s04,ch1_curvature,Ch1 curvature MPNN,new_ch1_model,nn,100,500,0.1,0.1,2.3843850505050512,0.13074,0.13113506138324738,0.08306288719177246
+community,Community topology,u0.10_s00,baseline_curvature,Existing curvature MPNN,existing_u10_sweep,nn,100,500,0.1,0.1,2.774481616161617,0.1229,0.12184222787618637,0.08482695370912552
+community,Community topology,u0.10_s00,matched_random,Matched random,existing_u10_sweep,matched_random,100,500,0.1,0.1,3.657090101010101,0.12086000000000001,0.12184224277734756,1.4901161193847656e-08
+community,Community topology,u0.10_s01,baseline_curvature,Existing curvature MPNN,existing_u10_sweep,nn,100,500,0.1,0.1,2.7253276767676744,0.12444000000000001,0.12379619479179382,0.08547718822956085
+community,Community topology,u0.10_s01,matched_random,Matched random,existing_u10_sweep,matched_random,100,500,0.1,0.1,3.7282501010101003,0.12096,0.12379620969295502,1.4901161193847656e-08
+community,Community topology,u0.10_s02,baseline_curvature,Existing curvature MPNN,existing_u10_sweep,nn,100,500,0.1,0.1,2.8392509090909086,0.12886,0.1271667629480362,0.08834455907344818
+community,Community topology,u0.10_s02,matched_random,Matched random,existing_u10_sweep,matched_random,100,500,0.1,0.1,3.8423208080808053,0.12818,0.1271667629480362,0.0
+community,Community topology,u0.10_s03,baseline_curvature,Existing curvature MPNN,existing_u10_sweep,nn,100,500,0.1,0.1,2.820798989898992,0.1234,0.12286772578954697,0.08688103407621384
+community,Community topology,u0.10_s03,matched_random,Matched random,existing_u10_sweep,matched_random,100,500,0.1,0.1,4.020055757575758,0.12378,0.12286771833896637,7.450580596923828e-09
+community,Community topology,u0.10_s04,baseline_curvature,Existing curvature MPNN,existing_u10_sweep,nn,100,500,0.1,0.1,2.581263232323232,0.12546,0.12651212513446808,0.08584948629140854
+community,Community topology,u0.10_s04,matched_random,Matched random,existing_u10_sweep,matched_random,100,500,0.1,0.1,3.6182678787878793,0.1259,0.12651215493679047,2.9802322387695312e-08
+community,Community topology,u0.10_s00,no_curvature,No-curvature MPNN,existing_u10_sweep,nn,100,500,0.1,0.1,2.936581616161617,0.12678,0.12477068603038788,0.08036261796951294
+community,Community topology,u0.10_s01,no_curvature,No-curvature MPNN,existing_u10_sweep,nn,100,500,0.1,0.1,2.9863822222222187,0.1268,0.12541837990283966,0.08051303029060364
+community,Community topology,u0.10_s02,no_curvature,No-curvature MPNN,existing_u10_sweep,nn,100,500,0.1,0.1,2.9743622222222177,0.12683999999999998,0.1265546828508377,0.08081766963005066
+community,Community topology,u0.10_s03,no_curvature,No-curvature MPNN,existing_u10_sweep,nn,100,500,0.1,0.1,3.2862408080808065,0.12534,0.1250505894422531,0.08014246821403503
+community,Community topology,u0.10_s04,no_curvature,No-curvature MPNN,existing_u10_sweep,nn,100,500,0.1,0.1,2.802859797979798,0.1259,0.1277429163455963,0.08101862668991089
+random,Random-geometric topology,u0.10_s00,baseline_curvature,Existing curvature MPNN,existing_u10_sweep,nn,100,500,0.1,0.1,2.1945466666666693,0.12712,0.12650756537914276,0.08567618578672409
+random,Random-geometric topology,u0.10_s00,matched_random,Matched random,existing_u10_sweep,matched_random,100,500,0.1,0.1,2.7938892929292956,0.1283,0.12650753557682037,2.9802322387695312e-08
+random,Random-geometric topology,u0.10_s01,baseline_curvature,Existing curvature MPNN,existing_u10_sweep,nn,100,500,0.1,0.1,2.3353171717171746,0.1304,0.1297101229429245,0.08899472653865814
+random,Random-geometric topology,u0.10_s01,matched_random,Matched random,existing_u10_sweep,matched_random,100,500,0.1,0.1,2.9741537373737383,0.12932,0.1297100931406021,2.9802322387695312e-08
+random,Random-geometric topology,u0.10_s02,baseline_curvature,Existing curvature MPNN,existing_u10_sweep,nn,100,500,0.1,0.1,2.5056618181818178,0.12279999999999999,0.12443597614765167,0.08726239204406738
+random,Random-geometric topology,u0.10_s02,matched_random,Matched random,existing_u10_sweep,matched_random,100,500,0.1,0.1,3.3627561616161623,0.1234,0.12443599849939346,2.2351741790771484e-08
+random,Random-geometric topology,u0.10_s03,baseline_curvature,Existing curvature MPNN,existing_u10_sweep,nn,100,500,0.1,0.1,2.60023717171717,0.12576,0.12701208889484406,0.08933631330728531
+random,Random-geometric topology,u0.10_s03,matched_random,Matched random,existing_u10_sweep,matched_random,100,500,0.1,0.1,3.5553175757575777,0.12616,0.12701210379600525,1.4901161193847656e-08
+random,Random-geometric topology,u0.10_s04,baseline_curvature,Existing curvature MPNN,existing_u10_sweep,nn,100,500,0.1,0.1,2.3550478787878784,0.12694,0.12638039886951447,0.08483053743839264
+random,Random-geometric topology,u0.10_s04,matched_random,Matched random,existing_u10_sweep,matched_random,100,500,0.1,0.1,2.8948913131313123,0.12834,0.12638041377067566,1.4901161193847656e-08
+random,Random-geometric topology,u0.10_s00,no_curvature,No-curvature MPNN,existing_u10_sweep,nn,100,500,0.1,0.1,2.2287692929292913,0.12428,0.12419699132442474,0.08297709375619888
+random,Random-geometric topology,u0.10_s01,no_curvature,No-curvature MPNN,existing_u10_sweep,nn,100,500,0.1,0.1,2.3453913131313135,0.12359999999999999,0.12476066499948502,0.08273199945688248
+random,Random-geometric topology,u0.10_s02,no_curvature,No-curvature MPNN,existing_u10_sweep,nn,100,500,0.1,0.1,2.6598583838383822,0.12202,0.12199467420578003,0.08204948157072067
+random,Random-geometric topology,u0.10_s03,no_curvature,No-curvature MPNN,existing_u10_sweep,nn,100,500,0.1,0.1,2.82324505050505,0.12087999999999999,0.12183777987957001,0.08190414309501648
+random,Random-geometric topology,u0.10_s04,no_curvature,No-curvature MPNN,existing_u10_sweep,nn,100,500,0.1,0.1,2.304616767676768,0.12318,0.12432003021240234,0.08276548981666565

@@ -76,6 +76,6 @@
   },
   "checkpoint": "result_GNN\\mpnnV3_ch1_budget_n100_u0.20_b0.10_a1.5_lowLR\\checkpoints\\best_validation\\model",
   "config": "../../training_config.yaml",
-  "episode": 110,
+  "episode": 170,
   "source_config": "configs/GNN/mpnn_newC_heuristic_channel.yaml"
 }
