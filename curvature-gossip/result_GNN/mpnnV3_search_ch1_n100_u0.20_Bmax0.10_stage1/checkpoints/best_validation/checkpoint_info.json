@@ -1,0 +1,131 @@
+{
+  "actor": {
+    "aggregated_message_dim": 32,
+    "aggregation": "mean_max",
+    "architecture_version": "curvature_stage2_mpnn_v1",
+    "bmax": 1.0,
+    "condition_message_on_receiver": true,
+    "curvature": {
+      "alpha_init": 1.5,
+      "alpha_override": 1.5,
+      "alpha_parameterization": "softplus",
+      "base_search": {
+        "alpha_candidates": [
+          0.5,
+          1.0,
+          1.2,
+          1.5,
+          1.8
+        ],
+        "base_candidates": {
+          "coarse_count": 7,
+          "max_fraction_of_max": 1.0,
+          "min_fraction_of_max": 0.25,
+          "mode": "coarse_to_fine",
+          "refine": true,
+          "refine_count": 5,
+          "refine_per_alpha": true
+        },
+        "calibration": {
+          "center_statistic": "mean",
+          "intercept_max_iterations": 100,
+          "intercept_tolerance": 1e-06,
+          "topology_count": 32
+        },
+        "enabled": true,
+        "evaluation": {
+          "coarse_dynamic_repeats": 1,
+          "coarse_topology_count": 10,
+          "dynamic_repeats": 2,
+          "max_probability_tolerance": 0.005,
+          "metric": "mean_VAoI",
+          "prefer_lower_probability_on_tie": true,
+          "slots": 500,
+          "tie_relative_tolerance": 0.01,
+          "topology_count": 20
+        },
+        "save_per_scenario": true
+      },
+      "base_tx_ratio": 0.09687500000000002,
+      "calibrated_intercept": -2.28118896484375,
+      "center": 0.3952584334706596,
+      "enabled": true,
+      "freeze_stage1": true,
+      "score": "incident_bottleneck_max",
+      "search_summary": {
+        "actual_tx_ratio": 0.0969975,
+        "mean_VAoI": 7.62646634848485,
+        "search_probability_mean": 0.09717986248631397,
+        "selected_alpha": 1.5,
+        "selected_base_tx_ratio": 0.09687500000000002,
+        "selected_center": 0.3952584334706596,
+        "selected_intercept": -2.28118896484375
+      }
+    },
+    "curvature_enabled": true,
+    "decoder_input_dim": 38,
+    "edge_input_dim": 3,
+    "edge_input_feature_names": [
+      "neighbor_freshness_gain",
+      "neighbor_estimate_confidence",
+      "clipped_bottleneck_score"
+    ],
+    "input_feature_names": [
+      "normalized_degree",
+      "time_since_last_tx",
+      "consecutive_tx_attempts",
+      "congestion_ewma",
+      "self_information_increment"
+    ],
+    "message_dim": 16,
+    "message_input_dim": 8,
+    "node_input_dim": 5,
+    "node_input_feature_names": [
+      "normalized_degree",
+      "time_since_last_tx",
+      "consecutive_tx_attempts",
+      "congestion_ewma",
+      "self_information_increment"
+    ],
+    "residual": {
+      "activation": "relu",
+      "architecture": "mpnn",
+      "delta_max": 1.0,
+      "detach_stage1_reference": true,
+      "enabled": true,
+      "freeze_stage1": true,
+      "hidden_dims": [
+        64,
+        64
+      ],
+      "include_curvature_freshness_interaction": false,
+      "include_curvature_mean": false,
+      "include_scenario_context": false,
+      "mpnn": {
+        "aggregation": "mean_max",
+        "bmax": 1.0,
+        "condition_message_on_receiver": true,
+        "message_dim": 16,
+        "message_hidden_dims": [
+          32
+        ],
+        "update_hidden_dims": [
+          64,
+          64
+        ],
+        "use_curvature_edge_feature": true,
+        "use_sender_node_features": false
+      },
+      "use_stage1_reference": true,
+      "zero_init_output": true
+    },
+    "residual_architecture": "mpnn",
+    "stage": 2,
+    "use_curvature_edge_feature": true,
+    "use_sender_node_features": false
+  },
+  "checkpoint": "result_GNN\\mpnnV3_search_ch1_n100_u0.20_Bmax0.10_stage1\\checkpoints\\best_validation\\model",
+  "config": "../../training_config.yaml",
+  "episode": 160,
+  "source_config": "configs/GNN/mpnn_newC_ch1_search.yaml"
+}

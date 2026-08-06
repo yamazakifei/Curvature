@@ -1,0 +1,213 @@
+# Stage-2 MPNN + Stage-1 curvature-only coarse-to-fine search.
+# Expected command:
+# python scripts/train_nn_ctde.py --config configs/GNN/mpnn_newC_ch1_search.yaml
+
+experiment:
+  id: mpnnV3_search_ch1_n100_u0.20_Bmax0.10_stage1
+  description: "0805：在Stage-2 PPO训练前自动搜索Stage-1基础概率b和给定alpha列表；Bmax与b解耦。"
+  master_seed: 20260723
+  slots: &evaluation_slots 500
+
+# 自动模式仅配置一个 master_seed。
+# 程序使用固定 namespace + index 派生校准、搜索、训练、验证四个集合的随机流，
+# 并将实际 seed plan 保存为 resolved_seed_manifest.json。
+randomness:
+  mode: derived_namespaces
+  save_manifest: true
+  derivation_version: v1
+
+topology:
+  # type: random_geometric
+  # params:
+  #   n_nodes: &n_nodes 100
+  #   area_width_m: 200.0
+  #   area_height_m: 200.0
+  #   communication_radius_m: 40.0
+  #   max_attempts: 500
+  type: soft_two_community
+  params:
+    n_nodes: &n_nodes 100
+    cluster_sizes: [50, 50]
+    area_width_m: 400.0
+    area_height_m: 300.0
+    communication_radius_m: 40.0
+    center_separation_m: 160.0
+    cluster_radius_m: 80.0
+    cross_edge_count_range: [2, 4]
+    min_cross_endpoints_per_cluster: 2
+    min_degree: 3
+    require_induced_cluster_connected: true
+    min_edge_connectivity: 2
+    max_attempts: 2000
+
+source:
+  update_probability: &update_probability 0.20
+
+channel:
+  tx_power_dbm: 20.0
+  pathloss_reference_db: 30.0
+  reference_distance_m: 1.0
+  pathloss_exponent: 2.5
+  shadowing_std_db: 0.0
+  reciprocal_shadowing: true
+  rayleigh_fading: false
+  noise_psd_dbm_per_hz: -174.0
+  bandwidth_hz: 1000000.0
+  noise_figure_db: 5.0
+  sinr_threshold_db: -3.0
+
+curvature:
+  method: distributed_af3
+  normalization: local_degree_bound
+
+constraints:
+  # Bmax：全网长期平均广播概率上限，不再作为Stage-1的概率中心。
+  max_tx_ratio: &max_tx_ratio 0.10
+  # 当前主要用于单节点长期活动率/债务诊断；不是神经网络概率硬裁剪。
+  per_node_cap_multiplier: 1.5
+
+actor:
+  stage: 2
+  curvature:
+    enabled: true
+    score: incident_bottleneck_max
+    # auto：搜索前在独立 calibration topology pool 上计算公共中心c_kappa。
+    center: auto
+    alpha_parameterization: softplus
+
+    # q_base搜索关闭时使用的直接配置；同时作为兼容/回退值。
+    base_tx_ratio: 0.10
+    alpha_init: 1.5
+    alpha_override: 1.5
+    base_search:
+      # 是否启用Stage-1搜索模式：在Stage-2训练前自动搜索基础概率b和给定alpha列表。
+      enabled: true
+
+      # beta0校准池：只生成拓扑和曲率，不运行动态通信仿真。
+      calibration:
+        topology_count: 32
+        center_statistic: mean
+        intercept_tolerance: 1.0e-6
+        intercept_max_iterations: 100
+
+      # b基于Bmax自动粗搜，然后对每个alpha分别局部细化。
+      base_candidates:
+        mode: coarse_to_fine
+        min_fraction_of_max: 0.25
+        max_fraction_of_max: 1.0
+        coarse_count: 7
+        refine: true
+        refine_count: 5
+        refine_per_alpha: true
+
+      # alpha不自动生成，始终使用给定列表。
+      alpha_candidates: [0.5, 1.0, 1.2, 1.5, 1.8]
+
+      # Stage-1 curvature-only搜索池。
+      evaluation:
+        topology_count: 20
+        dynamic_repeats: 2
+        coarse_topology_count: 10
+        coarse_dynamic_repeats: 1
+        slots: *evaluation_slots
+        metric: mean_VAoI
+        max_probability_tolerance: 0.005
+        tie_relative_tolerance: 0.01
+        prefer_lower_probability_on_tie: true
+
+      save_per_scenario: true
+
+  residual:
+    enabled: true
+    architecture: mpnn
+    hidden_dims: [64, 64]
+    activation: relu
+    delta_max: 1.0
+    zero_init_output: true
+    use_stage1_reference: true
+    detach_stage1_reference: true
+    include_scenario_context: false
+    include_curvature_mean: false
+    include_curvature_freshness_interaction: false
+    # 搜索结束后必须冻结选中的b、alpha、beta0和center。
+    freeze_stage1: true
+    mpnn:
+      message_hidden_dims: [32]
+      message_dim: 16
+      update_hidden_dims: [64, 64]
+      aggregation: mean_max
+      condition_message_on_receiver: true
+      use_sender_node_features: false
+      use_curvature_edge_feature: true
+      bmax: 1.0
+
+critic:
+  architecture: node_conditioned
+  hidden_dims: [64, 64]
+  activation: relu
+  include_scenario_context: true
+  include_exact_node_features: true
+  include_channel_features: true
+  include_curvature_features: true
+  advantage_mode: node_gae
+  bootstrap_rollout_end: true
+
+observation:
+  consecutive_tx_scale: 3.0
+  neighbor_confidence_time_constant: 20.0
+  congestion_ewma_beta: 0.8
+  congestion_feature_scale: 5.0
+
+training:
+  episodes: 300
+  rollout_slots: 400
+
+  # 新配置使用max_tx_ratios表示Bmax；旧target_tx_ratios继续兼容。
+  max_tx_ratios: [*max_tx_ratio]
+  node_counts: [*n_nodes]
+  update_probabilities: [*update_probability]
+
+  # 自动种子模式不需要topology_seed_start。
+  actor_learning_rate: 0.0001
+  critic_learning_rate: 0.0003
+  common_mode_coefficient: 0.05
+  clip_ratio: 0.2
+  entropy_coefficient: 0.0
+  gamma: 0.99
+  gae_lambda: 0.95
+  ppo_epochs: 4
+  vaoi_reward_scale: 0.1
+
+  # 保持当前实验选择：不启用预算advantage和动态乘子。
+  # 即便关闭，Bmax仍用于Stage-1搜索可行性过滤和验证语义。
+  use_budget_advantage: true
+  update_multiplier: true
+  initial_multiplier: 0.0
+  multiplier_learning_rate: 0.01
+  multiplier_max: 0.15
+  tx_ratio_ema_beta: 0.5
+  budget_relative_tolerance: 0.05
+  multiplier_error_clip: 1.0
+
+  initial_checkpoint: null
+  restore_actor_only: true
+
+validation:
+  enabled: true
+  trigger: every_episodes
+  every_episodes: 10
+  checkpoint_mode: validation_best_only
+
+  # 自动生成一次后固定复用；不在每次checkpoint验证时重新抽样。
+  scenario_generation:
+    mode: auto
+    scenario_count: 20
+    slots: *evaluation_slots
+    n_nodes: *n_nodes
+    update_probability: *update_probability
+    max_tx_ratio: *max_tx_ratio
+
+output:
+  root: result_GNN
+  save_per_slot: false
+  make_plots: false

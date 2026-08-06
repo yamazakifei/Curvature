@@ -1,0 +1,12 @@
+{
+  "actual_tx_ratio": 0.0969975,
+  "constraint_status": "feasible",
+  "mean_VAoI": 7.62646634848485,
+  "mean_tail_VAoI": 20.16603272727273,
+  "search_probability_mean": 0.09717986248631397,
+  "selected_alpha": 1.5,
+  "selected_base_tx_ratio": 0.09687500000000002,
+  "selected_center": 0.3952584334706596,
+  "selected_intercept": -2.28118896484375,
+  "selection_metric": "mean_VAoI"
+}

@@ -1,5 +1,33 @@
 # Curvature-Gossip Project Status
 
+## Stage-1 base search V3.2 runtime compression (2026-08-05)
+
+`src/curvature_gossip/learning/stage1_search.py` now implements the V3.2
+search acceleration plan. Calibration and search topologies cache their
+immutable topology, AF3 result, bottleneck importance, node score vector, and
+per-repeat static `PropagationModel`; every candidate still receives a fresh
+`GossipSimulator` and deterministic source/fading/action RNG streams.
+
+Coarse and full evaluations resolve `coarse_slots` and `full_slots` with
+fallback to the legacy `evaluation.slots` field.  After coarse evaluation,
+only `candidate_selection.coarse_keep_top_k_per_alpha` candidates per alpha,
+plus unique refine candidates, enter full evaluation.  Coarse rows are
+retained in `stage1_search_results.csv`; promoted candidates appear once for
+their coarse measurement and once for their full measurement.  Every row has
+`coarse_rank_within_alpha`, `evaluated_on_full`, and `pruned_after_coarse`.
+
+When enabled, candidate-level `ProcessPoolExecutor` parallelism uses a
+worker-local immutable scenario cache and ordered result collection, so worker
+identity and completion order do not affect RNG or CSV order.  The optional
+`stage1_search_runtime.json` records phase timings, simulation counts, cache
+status, actual worker count, slots, and candidate counts.  V3.2's explicit
+`center_mode: none` uses `q_base=sigmoid(beta0 + alpha_kappa * score)`;
+omitted center fields retain the legacy fixed/auto resolution.  The trainer
+also skips the old center recomputation after a successful search.
+
+The focused regression coverage is in
+`curvature-gossip/tests/test_stage1_search_v32.py`.
+
 ## Stage-2 residual common-mode stabilization (2026-08-02)
 
 Stage-2 residual training now supports `training.common_mode_coefficient`.

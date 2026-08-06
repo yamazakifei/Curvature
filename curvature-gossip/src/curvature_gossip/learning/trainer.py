@@ -23,7 +23,7 @@ from ..simulator import GossipSimulator, SimulationParameters
 from ..topology import get_topology_generator
 from .ctde_ppo import CTDEPPO, resolve_learning_rates
 from .seed_plan import build_seed_manifest
-from .stage1_search import run_stage1_search
+from .stage1_search import resolve_center_mode, run_stage1_search
 from .features import (
     encode_curvature_score, encode_global_state, encode_observations,
     encode_stage1_observations, encode_stage2_observations, encode_stage2_mpnn_observations,
@@ -242,6 +242,9 @@ def _stage1_actor_config(raw: Mapping) -> Mapping:
         raise ValueError("Stage 1 must not instantiate a residual MLP")
     if stage == 1 and not curvature_enabled:
         raise ValueError("Stage 1 requires actor.curvature.enabled=true")
+    # Resolve V3.2's explicit center mode here so invalid settings fail before
+    # TensorFlow graph construction; omitted fields retain legacy semantics.
+    resolve_center_mode(curvature)
     actor["curvature"] = curvature
     if stage == 1:
         actor["architecture_version"] = "curvature_stage1_v1"
@@ -331,13 +334,11 @@ def _stage1_actor_config(raw: Mapping) -> Mapping:
 def _freeze_stage1_center(raw: Mapping, actor: Mapping) -> float:
     """Compute one offline mean score over configured training topologies and freeze it."""
     curvature = dict(actor["curvature"])
-    center = curvature.get("center", "auto")
-    if isinstance(center, (int, float)) and not isinstance(center, bool):
-        if not np.isfinite(float(center)):
-            raise ValueError("actor.curvature.center must be finite")
-        return float(center)
-    if center not in (None, "auto"):
-        raise ValueError("actor.curvature.center must be a number, null, or 'auto'")
+    center_mode = resolve_center_mode(curvature)
+    if center_mode == "none":
+        return 0.0
+    if center_mode == "fixed":
+        return float(curvature["center"])
     training = raw.get("training", {})
     # By default, calibrate the fixed center from every topology used in training.
     seeds = training.get("center_topology_seeds")
@@ -421,7 +422,8 @@ def train_ctde(config_path: str):
         actor_config["curvature"] = actor_curvature
         raw["actor"] = actor_config
     critic_config = _critic_config(raw)
-    if (int(actor_config.get("stage", 0)) in (1, 2)
+    if (not search_result
+            and int(actor_config.get("stage", 0)) in (1, 2)
             and bool(actor_config.get("curvature", {}).get("enabled", True))):
         frozen_center = _freeze_stage1_center(raw, actor_config)
         actor_config = dict(actor_config)
