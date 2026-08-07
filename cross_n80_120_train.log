@@ -1,0 +1,11 @@
+[Stage-1 Search] 搜索完成，最优配置： b=0.096875, alpha=1.500000, beta0=-2.889297, center=0.000000; search_mean_prob=0.096643, actual_tx_ratio=0.096661, mean_VAoI=7.205936, feasible=yes (Bmax=0.100000)
+[Stage-1 Search] 结果已保存到: D:\ZMF\2026Curvature\result_GNN_cross_n80_120\mpnnV3.2_ch1_cross_n80_120
+episode=0 VAoI=6.2278 tx_ratio=0.1010 multiplier=0.0001
+episode=1 VAoI=6.3189 tx_ratio=0.0942 multiplier=0.0000
+episode=2 VAoI=7.3119 tx_ratio=0.0995 multiplier=0.0000
+episode=3 VAoI=8.6178 tx_ratio=0.0952 multiplier=0.0000
+episode=4 VAoI=7.5423 tx_ratio=0.0991 multiplier=0.0000
+episode=5 VAoI=6.4237 tx_ratio=0.0979 multiplier=0.0000
+episode=6 VAoI=6.8223 tx_ratio=0.0979 multiplier=0.0000
+episode=7 VAoI=6.3672 tx_ratio=0.1001 multiplier=0.0000
+episode=8 VAoI=6.9273 tx_ratio=0.0996 multiplier=0.0000

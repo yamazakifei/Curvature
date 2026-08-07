@@ -1,0 +1,23 @@
+{
+  "cache_enabled": true,
+  "calibration_topology_count": 32,
+  "center_mode": "none",
+  "coarse_candidate_count": 35,
+  "coarse_simulation_count": 350,
+  "coarse_slots": 200,
+  "dynamic_repeats": 2,
+  "full_candidate_count": 25,
+  "full_simulation_count": 1000,
+  "full_slots": 500,
+  "parallel_enabled": true,
+  "parallel_workers": 2,
+  "schema_version": "v3_2",
+  "search_topology_count": 20,
+  "timing_seconds": {
+    "calibration_cache": 0.7445980000000001,
+    "coarse_evaluation": 132.1833374,
+    "full_evaluation": 993.3942206,
+    "search_cache": 0.48379899999999987,
+    "total": 1126.8528784
+  }
+}

@@ -1,5 +1,14 @@
 # Project Status
 
+## Cross-N training path and validation (2026-08-06)
+
+The cross-N YAML files under `configs/GNN/` use the project-local
+`result_cross/` container for future runs.  The non-resume YAML performs the
+pooled SearchBase calibration/search; the resume YAML reuses its selected
+cross-N intercept and alpha and starts PPO from a fresh model.  Fixed
+validation aggregates probability statistics per scenario, so N-dependent
+matrix widths are supported.
+
 ## Dual no-curvature ablation
 
 The Stage-2 paired ablation is implemented for both the MLP Actor and the MPNN
@@ -230,3 +239,22 @@ deprecation warnings in this Python 3.7 environment.
 After Stage-1 search completes, the terminal now prints the selected `b`,
 `alpha`, `beta0`, `c_kappa`, search mean probability, actual transmission
 ratio, mean VAoI, feasibility, and the output directory.
+
+## V3.2 scalability evaluations (2026-08-06)
+
+Added `scripts/run_gnn_v32_scalability_evaluations.py` to evaluate
+`mpnnV3.2_search_ch1_n100_u0.20_Bmax0.10_stage1_no_center` on the existing
+`0804Scalability_N` and `0804Scalability_u` scenarios. The runner copies the
+existing YAMLs instead of regenerating them, so all topology, seed, density,
+and validation-horizon settings remain unchanged. It uses 200 slots for the N
+sweep and 500 slots for the u sweep, while retaining the no-curvature and
+matched-random comparison rows.
+
+Outputs are stored in `result_GNN/0806ScalabilityV3.2_N/` and
+`result_GNN/0806ScalabilityV3.2_u/`. Summary CSVs include mean actor broadcast
+probability and its normal-approximation 95% confidence interval. The plotted
+curvature legend explicitly identifies the V3.2 checkpoint.
+
+At N=100, V3.2 mean VAoI is 5.716 (mean p=0.109) on community topologies and
+4.661 (mean p=0.114) on random-geometric topologies. At u=0.10, the values
+are 2.877 (mean p=0.107) and 2.472 (mean p=0.111), respectively.

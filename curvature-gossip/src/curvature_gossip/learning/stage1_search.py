@@ -41,6 +41,7 @@ class SearchScenario:
     topology_index: int
     dynamic_repeat_index: int
     topology_seed_label: int
+    node_count: int = None
 
 
 @dataclass(frozen=True)
@@ -48,6 +49,7 @@ class SearchTopologyCache:
     """候选之间可安全共享的静态拓扑、曲率和节点分数。"""
 
     topology_index: int
+    node_count: int
     topology: Any
     curvature: Any
     importance: Mapping
@@ -208,13 +210,38 @@ def _topology_params(raw: Mapping[str, Any], node_count: int = None) -> Dict[str
     return params
 
 
-def _build_topology_cache(raw: Mapping[str, Any], topology_index: int, pool: str) -> SearchTopologyCache:
+def _pool_node_counts(raw: Mapping[str, Any], pool: str) -> Tuple[int, ...]:
+    """Resolve the balanced N pool used by SearchBase calibration/search."""
+    curvature = dict(raw.get("actor", {}).get("curvature", {}))
+    search = dict(curvature.get("base_search", {}))
+    section = dict(search.get("calibration", {}) if pool == "calibration" else search.get("evaluation", {}))
+    values = section.get("node_counts", search.get("node_counts"))
+    if values is None:
+        values = raw.get("training", {}).get("node_counts")
+    if values is None:
+        values = [raw.get("topology", {}).get("params", {}).get("n_nodes", 20)]
+    if not isinstance(values, (list, tuple)) or not values:
+        raise ValueError("SearchBase {} node_counts must be a nonempty list".format(pool))
+    resolved = tuple(sorted({int(value) for value in values}))
+    if any(value < 2 for value in resolved):
+        raise ValueError("SearchBase node_counts must be at least two")
+    return resolved
+
+
+def _pool_node_count(raw: Mapping[str, Any], pool: str, index: int) -> int:
+    values = _pool_node_counts(raw, pool)
+    return int(values[int(index) % len(values)])
+
+
+def _build_topology_cache(
+    raw: Mapping[str, Any], topology_index: int, pool: str, node_count: int = None,
+) -> SearchTopologyCache:
     """只计算一次候选共享的 topology、AF3、importance 和 score 向量。"""
     master_seed = int(raw["experiment"].get("master_seed", 0))
     generator = get_topology_generator(raw["topology"]["type"])
     topology = generator.generate(
         make_rng(master_seed, pool, "topology", int(topology_index)),
-        _topology_params(raw),
+        _topology_params(raw, node_count),
     )
     curvature_config = raw.get("curvature", {})
     curvature = _curvature_provider(curvature_config).compute(topology)
@@ -226,14 +253,17 @@ def _build_topology_cache(raw: Mapping[str, Any], topology_index: int, pool: str
         for node in topology.graph.nodes
     ], dtype=float)
     return SearchTopologyCache(
-        topology_index=int(topology_index), topology=topology, curvature=curvature,
+        topology_index=int(topology_index), node_count=int(topology.graph.number_of_nodes()),
+        topology=topology, curvature=curvature,
         importance=importance, scores=scores,
     )
 
 
-def _build_topology(raw: Mapping[str, Any], topology_index: int, pool: str):
+def _build_topology(
+    raw: Mapping[str, Any], topology_index: int, pool: str, node_count: int = None,
+):
     """保留旧内部调用的 tuple 返回接口。"""
-    cached = _build_topology_cache(raw, topology_index, pool)
+    cached = _build_topology_cache(raw, topology_index, pool, node_count)
     return cached.topology, cached.curvature, cached.importance, cached.scores
 
 
@@ -293,7 +323,7 @@ def _build_search_simulator(raw: Mapping[str, Any], scenario: SearchScenario, ma
     """用固定外生随机流构造一个候选共享的仿真场景。"""
     master_seed = int(raw["experiment"].get("master_seed", 0))
     topology, curvature, importance, scores = _build_topology(
-        raw, scenario.topology_seed_label, "stage1_search"
+        raw, scenario.topology_seed_label, "stage1_search", scenario.node_count
     )
     repeat = int(scenario.dynamic_repeat_index)
     propagation = PropagationModel(
@@ -359,6 +389,7 @@ def _evaluate_candidate(
             "alpha": alpha,
             "calibrated_intercept": intercept,
             "topology_index": int(scenario.topology_index),
+            "n_nodes": int(simulator.state.n_nodes),
             "dynamic_repeat_index": int(scenario.dynamic_repeat_index),
             "search_probability_mean": mean_probability,
             "actual_tx_ratio": actual_ratio,
@@ -537,7 +568,9 @@ def run_stage1_search(raw: Mapping[str, Any], output_directory: Path) -> Dict[st
         raise ValueError("calibration.topology_count must be positive")
     calibration_started = time.perf_counter()
     for index in range(calibration_count):
-        cache = _build_topology_cache(raw, index, "stage1_calibration")
+        cache = _build_topology_cache(
+            raw, index, "stage1_calibration", _pool_node_count(raw, "calibration", index)
+        )
         scores.extend(cache.scores.tolist())
     calibration_cache_seconds = time.perf_counter() - calibration_started
     if center_mode == "none":
@@ -579,7 +612,9 @@ def run_stage1_search(raw: Mapping[str, Any], output_directory: Path) -> Dict[st
     search_cache_started = time.perf_counter()
     if cache_enabled:
         topology_caches = {
-            index: _build_topology_cache(raw, index, "stage1_search")
+            index: _build_topology_cache(
+                raw, index, "stage1_search", _pool_node_count(raw, "search", index)
+            )
             for index in range(total_topologies)
         }
         full_scenarios = [
@@ -593,11 +628,11 @@ def run_stage1_search(raw: Mapping[str, Any], output_directory: Path) -> Dict[st
         ]
     else:
         full_scenarios = [
-            SearchScenario(index, repeat, index)
+            SearchScenario(index, repeat, index, _pool_node_count(raw, "search", index))
             for index in range(total_topologies) for repeat in range(total_repeats)
         ]
         coarse_scenarios = [
-            SearchScenario(index, repeat, index)
+            SearchScenario(index, repeat, index, _pool_node_count(raw, "search", index))
             for index in range(coarse_topologies) for repeat in range(coarse_repeats)
         ]
     search_cache_seconds = time.perf_counter() - search_cache_started
@@ -687,6 +722,10 @@ def run_stage1_search(raw: Mapping[str, Any], output_directory: Path) -> Dict[st
     per_scenario = [row for candidate in full_results for row in candidate["per_scenario"]]
     calibration = {
         "topology_count": calibration_count,
+        "node_counts": list(_pool_node_counts(raw, "calibration")),
+        "node_count_schedule": [
+            _pool_node_count(raw, "calibration", index) for index in range(calibration_count)
+        ],
         "center_statistic": str(calibration_config.get("center_statistic", "mean")),
         "center_mode": center_mode,
         "center": center,
@@ -710,7 +749,9 @@ def run_stage1_search(raw: Mapping[str, Any], output_directory: Path) -> Dict[st
         runtime = {
             "schema_version": "v3_2", "center_mode": center_mode,
             "calibration_topology_count": calibration_count,
+            "calibration_node_counts": list(_pool_node_counts(raw, "calibration")),
             "search_topology_count": total_topologies,
+            "search_node_counts": list(_pool_node_counts(raw, "search")),
             "dynamic_repeats": total_repeats,
             "coarse_candidate_count": len(coarse_candidates),
             "coarse_slots": coarse_slots,

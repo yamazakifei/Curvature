@@ -92,6 +92,37 @@ def test_soft_two_community_has_distributed_cross_edges_and_no_single_edge_cut()
     assert nx.edge_connectivity(topology.graph) >= 2
 
 
+def test_soft_two_community_scales_geometry_and_cross_edges_with_n():
+    params = {
+        "n_nodes": 80,
+        "cluster_sizes": [40, 40],
+        "reference_n_nodes": 100,
+        "scale_geometry_with_n": True,
+        "area_width_m": 400.0,
+        "area_height_m": 300.0,
+        "communication_radius_m": 40.0,
+        "cluster_radius_m": 80.0,
+        "center_separation_m": 160.0,
+        "cross_edge_count_range_by_n": {
+            80: [2, 4], 100: [3, 5], 120: [4, 6],
+        },
+        "min_cross_endpoints_per_cluster": 2,
+        "min_degree": 3,
+        "require_induced_cluster_connected": True,
+        "min_edge_connectivity": 2,
+        "max_attempts": 2000,
+    }
+    generator = get_topology_generator("soft_two_community")
+    topology = generator.generate(np.random.default_rng(321), params)
+    assert topology.graph.number_of_nodes() == 80
+    assert topology.metadata["resolved_cross_edge_count_range"] == [2, 4]
+    assert topology.metadata["scaled_geometry"] is True
+    # Both dimensions scale by sqrt(80/100), so the area is 0.8 of the
+    # reference area and density remains 100/(400*300).
+    assert topology.metadata["node_density_per_m2"] == pytest.approx(100.0 / (400.0 * 300.0))
+    assert 2 <= topology.metadata["cross_edge_count"] <= 4
+
+
 def test_invalid_random_geometric_reports_rejection_failure():
     with pytest.raises(ValueError, match="params"):
         get_topology_generator("random_geometric").generate(

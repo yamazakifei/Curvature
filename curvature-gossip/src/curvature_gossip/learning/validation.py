@@ -89,7 +89,13 @@ def _auto_validation_scenarios(raw: Mapping, generation: Mapping) -> Tuple[Valid
     master_seed = int(raw.get("experiment", {}).get("master_seed", 0))
     count = int(generation.get("scenario_count", 20))
     slots = int(generation.get("slots", raw.get("experiment", {}).get("slots", 200)))
-    n_nodes = int(generation.get("n_nodes", raw.get("topology", {}).get("params", {}).get("n_nodes", 20)))
+    raw_node_counts = generation.get(
+        "node_counts", generation.get("n_nodes", raw.get("topology", {}).get("params", {}).get("n_nodes", 20))
+    )
+    if isinstance(raw_node_counts, (list, tuple)):
+        node_counts = tuple(sorted({int(value) for value in raw_node_counts}))
+    else:
+        node_counts = (int(raw_node_counts),)
     update_probability = _require_probability(
         "validation auto update_probability",
         generation.get("update_probability", raw.get("source", {}).get("update_probability", 0.05)),
@@ -100,7 +106,7 @@ def _auto_validation_scenarios(raw: Mapping, generation: Mapping) -> Tuple[Valid
         generation.get("max_tx_ratio", constraints.get("max_tx_ratio", constraints.get("target_tx_ratio", 0.1))),
         True,
     )
-    if count < 1 or slots < 1 or n_nodes < 2:
+    if count < 1 or slots < 1 or not node_counts or min(node_counts) < 2:
         raise ValueError("validation auto scenario_count/slots/n_nodes are invalid")
     return tuple(
         ValidationScenario(
@@ -111,7 +117,9 @@ def _auto_validation_scenarios(raw: Mapping, generation: Mapping) -> Tuple[Valid
             channel_fading_seed=derived_seed(master_seed, "fixed_validation", "fading", index),
             policy_action_seed=derived_seed(master_seed, "fixed_validation", "actions", index),
             slots=slots,
-            n_nodes=n_nodes,
+            # Cycle through the configured sizes so fixed validation covers
+            # every N while retaining deterministic scenario seed streams.
+            n_nodes=node_counts[index % len(node_counts)],
             update_probability=update_probability,
             target_tx_ratio=target,
         )
@@ -120,11 +128,30 @@ def _auto_validation_scenarios(raw: Mapping, generation: Mapping) -> Tuple[Valid
 
 
 def probability_statistics(probability_steps: Sequence[np.ndarray]) -> Dict[str, float]:
-    """Summarize actor probabilities over nodes and time without mixing the two variances."""
-    matrix = np.asarray(tuple(probability_steps), dtype=np.float32)
-    if matrix.ndim != 2 or matrix.shape[0] == 0 or matrix.shape[1] == 0:
+    """Summarize probabilities, including validation pools with different N.
+
+    A normal rollout supplies one ``[nodes]`` vector per slot.  Cross-N fixed
+    validation supplies a sequence of ``[slots, nodes]`` matrices whose node
+    widths differ, so those matrices are reduced per scenario before the
+    global statistics are pooled.
+    """
+    if isinstance(probability_steps, np.ndarray) and probability_steps.ndim == 2:
+        matrices = [np.asarray(probability_steps, dtype=np.float32)]
+    else:
+        items = tuple(probability_steps)
+        if items and np.asarray(items[0]).ndim == 2:
+            matrices = [np.asarray(item, dtype=np.float32) for item in items]
+        else:
+            matrices = [np.asarray(items, dtype=np.float32)]
+    if not matrices or any(
+        matrix.ndim != 2 or matrix.shape[0] == 0 or matrix.shape[1] == 0
+        for matrix in matrices
+    ):
         raise ValueError("probability_steps must form a nonempty [slots, nodes] matrix")
-    flat = matrix.reshape(-1)
+    if any(not np.isfinite(matrix).all() for matrix in matrices):
+        raise ValueError("probability_steps must contain finite values")
+    flat = np.concatenate([matrix.reshape(-1) for matrix in matrices])
+    node_means = np.concatenate([np.mean(matrix, axis=0) for matrix in matrices])
     return {
         "action_prob_mean": float(np.mean(flat)),
         "action_prob_std": float(np.std(flat)),
@@ -133,9 +160,9 @@ def probability_statistics(probability_steps: Sequence[np.ndarray]) -> Dict[str,
         "action_prob_p50": float(np.percentile(flat, 50)),
         "action_prob_p90": float(np.percentile(flat, 90)),
         "action_prob_max": float(np.max(flat)),
-        "action_prob_node_std_mean": float(np.mean(np.std(matrix, axis=1))),
+        "action_prob_node_std_mean": float(np.mean([np.mean(np.std(matrix, axis=1)) for matrix in matrices])),
         "action_prob_global_std": float(np.std(flat)),
-        "action_prob_per_node_mean_std": float(np.std(np.mean(matrix, axis=0))),
+        "action_prob_per_node_mean_std": float(np.std(node_means)),
     }
 
 
@@ -315,9 +342,9 @@ def evaluate_fixed_validation(model, raw: Mapping, checkpoint_episode: int, chec
     stage1_rows = [row for row in scenario_rows if row["policy"] == "stage1_only"]
     fixed_rows = [row for row in scenario_rows if row["policy"] == "fixed_random"]
     matched_rows = [row for row in scenario_rows if row["policy"] == "matched_random"]
-    # All configured V3 validation scenarios use the same N; concatenate them for global q statistics.
-    all_probabilities = np.concatenate(nn_probability_matrices, axis=0)
-    nn_stats = probability_statistics(all_probabilities)
+    # Cross-N scenarios have different node widths; pool their matrices using
+    # the cross-N-aware statistics helper instead of concatenating axis=1.
+    nn_stats = probability_statistics(nn_probability_matrices)
     matched_mean, matched_low, matched_high = _paired_mean_ci(deltas_matched)
     fixed_mean, fixed_low, fixed_high = _paired_mean_ci(deltas_fixed)
     summary_row: Dict[str, Any] = {

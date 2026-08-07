@@ -89,3 +89,13 @@ def test_probability_statistics_separates_node_and_global_variation():
     assert np.isclose(statistics["action_prob_node_std_mean"], 0.1)
     assert statistics["action_prob_global_std"] > statistics["action_prob_node_std_mean"]
     assert np.isclose(statistics["action_prob_per_node_mean_std"], 0.1)
+
+
+def test_probability_statistics_accepts_cross_n_validation_matrices():
+    statistics = probability_statistics([
+        np.array([[0.1, 0.3]], dtype=np.float32),
+        np.array([[0.2, 0.4, 0.6]], dtype=np.float32),
+    ])
+    assert np.isclose(statistics["action_prob_mean"], 0.32)
+    assert np.isclose(statistics["action_prob_min"], 0.1)
+    assert np.isclose(statistics["action_prob_max"], 0.6)

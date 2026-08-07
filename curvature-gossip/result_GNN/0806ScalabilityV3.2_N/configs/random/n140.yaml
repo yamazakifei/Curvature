@@ -1,0 +1,94 @@
+experiment:
+  master_seed: 20260804
+topology:
+  type: random_geometric
+  params:
+    n_nodes: 140
+    area_width_m: 236.64319132398464
+    area_height_m: 236.64319132398464
+    communication_radius_m: 40.0
+    max_attempts: 500
+source:
+  update_probability: 0.2
+channel:
+  tx_power_dbm: 20.0
+  pathloss_reference_db: 30.0
+  reference_distance_m: 1.0
+  pathloss_exponent: 2.5
+  shadowing_std_db: 0.0
+  reciprocal_shadowing: true
+  rayleigh_fading: false
+  noise_psd_dbm_per_hz: -174.0
+  bandwidth_hz: 1000000.0
+  noise_figure_db: 5.0
+  sinr_threshold_db: -3.0
+curvature:
+  method: distributed_af3
+  normalization: local_degree_bound
+constraints:
+  target_tx_ratio: 0.1
+  per_node_cap_multiplier: 1.5
+observation:
+  consecutive_tx_scale: 3.0
+  neighbor_confidence_time_constant: 20.0
+  congestion_ewma_beta: 0.8
+  congestion_feature_scale: 5.0
+validation:
+  scenarios:
+  - id: n140_s00
+    topology_seed: 95900
+    source_update_seed: 96900
+    channel_shadowing_seed: 97900
+    channel_fading_seed: 98900
+    policy_action_seed: 99900
+    slots: 200
+    n_nodes: 140
+    update_probability: 0.2
+    target_tx_ratio: 0.1
+  - id: n140_s01
+    topology_seed: 95901
+    source_update_seed: 96901
+    channel_shadowing_seed: 97901
+    channel_fading_seed: 98901
+    policy_action_seed: 99901
+    slots: 200
+    n_nodes: 140
+    update_probability: 0.2
+    target_tx_ratio: 0.1
+  - id: n140_s02
+    topology_seed: 95902
+    source_update_seed: 96902
+    channel_shadowing_seed: 97902
+    channel_fading_seed: 98902
+    policy_action_seed: 99902
+    slots: 200
+    n_nodes: 140
+    update_probability: 0.2
+    target_tx_ratio: 0.1
+  - id: n140_s03
+    topology_seed: 95903
+    source_update_seed: 96903
+    channel_shadowing_seed: 97903
+    channel_fading_seed: 98903
+    policy_action_seed: 99903
+    slots: 200
+    n_nodes: 140
+    update_probability: 0.2
+    target_tx_ratio: 0.1
+  - id: n140_s04
+    topology_seed: 95904
+    source_update_seed: 96904
+    channel_shadowing_seed: 97904
+    channel_fading_seed: 98904
+    policy_action_seed: 99904
+    slots: 200
+    n_nodes: 140
+    update_probability: 0.2
+    target_tx_ratio: 0.1
+metadata:
+  topology_name: random
+  node_count: 140
+  reference_node_count: 100
+  linear_geometry_scale: 1.1832159566199232
+  density_policy: area and community geometry scale as sqrt(N/100); communication
+    radius is fixed

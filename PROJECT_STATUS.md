@@ -1,5 +1,37 @@
 # Curvature-Gossip Project Status
 
+## Cross-N community-topology training (2026-08-06)
+
+The new cross-N configuration is
+`curvature-gossip/configs/GNN/mpnnV3.2_ch1_cross_n80_120.yaml`.  It trains the
+Stage-2 MPNN on the same soft two-community family at N=80/90/100/110/120,
+with only the N condition changing.  The community geometry scales with
+sqrt(N/100) while the physical communication radius stays fixed, preserving
+node density, local edge distances, and mean degree approximately across N.
+The configured cross-community edge range is N-dependent (2--4 through
+4--6), and generated topology metadata records density, mean degree,
+conductance, and normalized-cut strength for audit.
+
+Stage-1 SearchBase now uses balanced N schedules independently for its
+calibration and search pools.  The generated `stage1_calibration.json`,
+`stage1_search_per_scenario.csv`, and runtime profile record the N schedules,
+so intercept calibration is pooled across N instead of being implicitly fixed
+at one topology size.  The training command is:
+
+Fixed validation also pools probability statistics across unequal node widths
+per scenario, so N=80/90/100/110/120 validation no longer assumes a single
+matrix width.
+
+Future cross-N runs write below `curvature-gossip/result_cross/`, with separate
+`result_GNN_cross_n80_120` and `result_GNN_cross_n80_120_resume` roots.  The
+currently running resume process was started before this path cleanup and
+continues using its existing workspace-level output directory.
+
+```powershell
+cd D:\ZMF\2026Curvature\curvature-gossip
+conda run --no-capture-output -n GRL_AoI_cpu37 python scripts/train_nn_ctde.py --config configs/GNN/mpnnV3.2_ch1_cross_n80_120.yaml
+```
+
 ## Stage-1 base search V3.2 runtime compression (2026-08-05)
 
 `src/curvature_gossip/learning/stage1_search.py` now implements the V3.2

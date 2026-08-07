@@ -64,6 +64,51 @@ def _sample_disk(
     return center + offsets
 
 
+def _scaled_geometry_value(
+    params: Mapping[str, Any], name: str, value: float, n_nodes: int,
+) -> float:
+    """Keep node density and local distances stable while changing N.
+
+    The communication radius stays in physical units.  The enclosing area and
+    community geometry therefore grow with sqrt(N), which keeps both density
+    and the local neighbor-distance distribution approximately unchanged.
+    """
+    if not bool(params.get("scale_geometry_with_n", False)):
+        return float(value)
+    reference_n = int(params.get("reference_n_nodes", params.get("n_nodes", n_nodes)))
+    if reference_n < 2:
+        raise ValueError("reference_n_nodes must be at least two")
+    return float(value) * float(np.sqrt(float(n_nodes) / float(reference_n)))
+
+
+def _n_dependent_range(
+    params: Mapping[str, Any], name: str, n_nodes: int, fallback: Tuple[int, int],
+) -> Tuple[int, int]:
+    """Resolve an integer range, linearly interpolating configured N anchors."""
+    mapping = params.get(name)
+    if not isinstance(mapping, Mapping) or not mapping:
+        return fallback
+    anchors = []
+    for key, raw_range in mapping.items():
+        anchor_n = int(key)
+        anchors.append((
+            anchor_n,
+            _pair_of_positive_ints({"range": raw_range}, "range", fallback),
+        ))
+    anchors.sort()
+    if n_nodes <= anchors[0][0]:
+        return anchors[0][1]
+    if n_nodes >= anchors[-1][0]:
+        return anchors[-1][1]
+    for (left_n, left), (right_n, right) in zip(anchors, anchors[1:]):
+        if left_n <= n_nodes <= right_n:
+            fraction = float(n_nodes - left_n) / float(right_n - left_n)
+            low = int(round(left[0] + fraction * (right[0] - left[0])))
+            high = int(round(left[1] + fraction * (right[1] - left[1])))
+            return max(0, low), max(low, high)
+    return fallback
+
+
 @register_topology("soft_two_community")
 class SoftTwoCommunityGenerator(TopologyGenerator):
     """通过两个相邻采样圆盘生成边界柔和、具有多条跨社区边的拓扑。"""
@@ -72,14 +117,28 @@ class SoftTwoCommunityGenerator(TopologyGenerator):
         n_nodes = int(params.get("n_nodes", 40))
         left_size, right_size = _cluster_sizes(params, n_nodes)
         communication_radius = float(params.get("communication_radius_m", 40.0))
-        cluster_radius = float(params.get("cluster_radius_m", 70.0))
-        center_separation = float(params.get("center_separation_m", 120.0))
-        width = float(params.get("area_width_m", center_separation + 2.0 * cluster_radius))
-        height = float(params.get("area_height_m", 2.0 * cluster_radius))
+        cluster_radius = _scaled_geometry_value(
+            params, "cluster_radius_m", float(params.get("cluster_radius_m", 70.0)), n_nodes
+        )
+        center_separation = _scaled_geometry_value(
+            params, "center_separation_m", float(params.get("center_separation_m", 120.0)), n_nodes
+        )
+        width_default = center_separation + 2.0 * cluster_radius
+        height_default = 2.0 * cluster_radius
+        width = _scaled_geometry_value(
+            params, "area_width_m", float(params.get("area_width_m", width_default)), n_nodes
+        )
+        height = _scaled_geometry_value(
+            params, "area_height_m", float(params.get("area_height_m", height_default)), n_nodes
+        )
         max_attempts = int(params.get("max_attempts", 2000))
 
         cross_low, cross_high = _pair_of_positive_ints(
-            params, "cross_edge_count_range", (5, 15)
+            {"cross_edge_count_range": _n_dependent_range(
+                params, "cross_edge_count_range_by_n", n_nodes,
+                _pair_of_positive_ints(params, "cross_edge_count_range", (5, 15)),
+            )},
+            "cross_edge_count_range", (5, 15),
         )
         min_cross_endpoints = int(params.get("min_cross_endpoints_per_cluster", 3))
         require_cluster_connected = bool(params.get("require_induced_cluster_connected", True))
@@ -154,6 +213,23 @@ class SoftTwoCommunityGenerator(TopologyGenerator):
                     "cluster_centers": [left_center.tolist(), right_center.tolist()],
                 },
             )
+            volumes = [
+                float(sum(graph.degree(i) for i in range(left_size))),
+                float(sum(graph.degree(i) for i in range(left_size, n_nodes))),
+            ]
+            cross_count = len(cross_edges)
+            topology.metadata.update({
+                "node_density_per_m2": float(n_nodes / (width * height)),
+                "mean_degree": float(2.0 * graph.number_of_edges() / n_nodes),
+                "cross_edge_count": int(cross_count),
+                "community_conductance": float(cross_count / max(min(volumes), 1.0)),
+                "normalized_cut_strength": float(
+                    cross_count / max(volumes[0], 1.0) + cross_count / max(volumes[1], 1.0)
+                ),
+                "scaled_geometry": bool(params.get("scale_geometry_with_n", False)),
+                "reference_n_nodes": int(params.get("reference_n_nodes", n_nodes)),
+                "resolved_cross_edge_count_range": [int(cross_low), int(cross_high)],
+            })
             try:
                 validate_topology(topology, params)
                 # 大于 1 时排除任何一条边单独成为全图割边的情况。

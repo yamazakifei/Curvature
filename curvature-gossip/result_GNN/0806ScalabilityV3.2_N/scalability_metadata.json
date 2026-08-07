@@ -1,0 +1,95 @@
+{
+  "configs": {
+    "community": [
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0806ScalabilityV3.2_N\\configs\\community\\n050.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0806ScalabilityV3.2_N\\configs\\community\\n060.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0806ScalabilityV3.2_N\\configs\\community\\n070.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0806ScalabilityV3.2_N\\configs\\community\\n080.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0806ScalabilityV3.2_N\\configs\\community\\n090.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0806ScalabilityV3.2_N\\configs\\community\\n100.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0806ScalabilityV3.2_N\\configs\\community\\n110.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0806ScalabilityV3.2_N\\configs\\community\\n120.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0806ScalabilityV3.2_N\\configs\\community\\n130.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0806ScalabilityV3.2_N\\configs\\community\\n140.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0806ScalabilityV3.2_N\\configs\\community\\n150.yaml"
+    ],
+    "random": [
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0806ScalabilityV3.2_N\\configs\\random\\n050.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0806ScalabilityV3.2_N\\configs\\random\\n060.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0806ScalabilityV3.2_N\\configs\\random\\n070.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0806ScalabilityV3.2_N\\configs\\random\\n080.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0806ScalabilityV3.2_N\\configs\\random\\n090.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0806ScalabilityV3.2_N\\configs\\random\\n100.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0806ScalabilityV3.2_N\\configs\\random\\n110.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0806ScalabilityV3.2_N\\configs\\random\\n120.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0806ScalabilityV3.2_N\\configs\\random\\n130.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0806ScalabilityV3.2_N\\configs\\random\\n140.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0806ScalabilityV3.2_N\\configs\\random\\n150.yaml"
+    ]
+  },
+  "density_scaling": "reused from 0804Scalability_N",
+  "evaluation": "V3.2 checkpoint on existing N-scalability scenarios",
+  "evaluation_master_seed": 20260804,
+  "model_dirs": {
+    "community": {
+      "curvature": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\mpnnV3.2_search_ch1_n100_u0.20_Bmax0.10_stage1_no_center",
+      "no_curvature": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\mpnnV3_no_curvature_heuristic_channel_n100_u0.20_b0.10"
+    },
+    "random": {
+      "curvature": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\mpnnV3.2_search_ch1_n100_u0.20_Bmax0.10_stage1_no_center",
+      "no_curvature": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\mpnnV3_no_curvature_random_n100_u0.20_b0.10"
+    }
+  },
+  "models": [
+    {
+      "checkpoint_episode": 160,
+      "model": "curvature",
+      "model_dir": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\mpnnV3.2_search_ch1_n100_u0.20_Bmax0.10_stage1_no_center",
+      "topology": "community"
+    },
+    {
+      "checkpoint_episode": 200,
+      "model": "no_curvature",
+      "model_dir": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\mpnnV3_no_curvature_heuristic_channel_n100_u0.20_b0.10",
+      "topology": "community"
+    },
+    {
+      "checkpoint_episode": 160,
+      "model": "curvature",
+      "model_dir": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\mpnnV3.2_search_ch1_n100_u0.20_Bmax0.10_stage1_no_center",
+      "topology": "random"
+    },
+    {
+      "checkpoint_episode": 210,
+      "model": "no_curvature",
+      "model_dir": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\mpnnV3_no_curvature_random_n100_u0.20_b0.10",
+      "topology": "random"
+    }
+  ],
+  "node_counts": [
+    50,
+    60,
+    70,
+    80,
+    90,
+    100,
+    110,
+    120,
+    130,
+    140,
+    150
+  ],
+  "plots": {
+    "community": [
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0806ScalabilityV3.2_N\\scalability_community.png",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0806ScalabilityV3.2_N\\scalability_community.pdf"
+    ],
+    "random": [
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0806ScalabilityV3.2_N\\scalability_random.png",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0806ScalabilityV3.2_N\\scalability_random.pdf"
+    ]
+  },
+  "scenarios_per_node_count": 5,
+  "slots_per_scenario": 200,
+  "source_config_root": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0804Scalability_N"
+}
