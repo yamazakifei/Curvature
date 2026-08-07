@@ -22,10 +22,13 @@ Fixed validation also pools probability statistics across unequal node widths
 per scenario, so N=80/90/100/110/120 validation no longer assumes a single
 matrix width.
 
-Future cross-N runs write below `curvature-gossip/result_cross/`, with separate
-`result_GNN_cross_n80_120` and `result_GNN_cross_n80_120_resume` roots.  The
-currently running resume process was started before this path cleanup and
-continues using its existing workspace-level output directory.
+The completed run is canonically organized at
+`curvature-gossip/result_cross/mpnnV3.2_ch1_cross_n80_120/`.  Its Stage-1
+SearchBase artifacts are retained from the pooled search, while its complete
+300-episode PPO history, cross-N validation history, and best checkpoint are
+from the fixed-parameter run.  `integration_manifest.json` records the two
+execution sources; this is one logical experiment directory, although the
+SearchBase and PPO phases were executed as separate processes.
 
 ```powershell
 cd D:\ZMF\2026Curvature\curvature-gossip

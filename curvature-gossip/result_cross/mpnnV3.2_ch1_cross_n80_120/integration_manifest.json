@@ -1,0 +1,27 @@
+{
+  "schema_version": "cross_n_integrated_v1",
+  "logical_experiment_id": "mpnnV3.2_ch1_cross_n80_120",
+  "integrated_output": "curvature-gossip/result_cross/mpnnV3.2_ch1_cross_n80_120",
+  "search_source": {
+    "config": "configs/GNN/mpnnV3.2_ch1_cross_n80_120.yaml",
+    "source_result": "curvature-gossip/result_cross/mpnnV3.2_ch1_cross_n80_120",
+    "search_completed": true,
+    "selected_alpha": 1.5,
+    "selected_base_tx_ratio": 0.09687500000000002,
+    "selected_intercept": -2.8892974853515625
+  },
+  "training_source": {
+    "config": "configs/GNN/mpnnV3.2_ch1_cross_n80_120_resume.yaml",
+    "source_result": "curvature-gossip/result_cross/mpnnV3.2_ch1_cross_n80_120_resume",
+    "episodes_completed": 300,
+    "validation_checkpoint_source": "curvature-gossip/result_cross/mpnnV3.2_ch1_cross_n80_120_resume"
+  },
+  "consistency": {
+    "same_master_seed": true,
+    "same_topology_family": true,
+    "same_node_count_pool": [80, 90, 100, 110, 120],
+    "training_history_policy": "complete_resume_history_replaces_failed_partial_history",
+    "not_a_literal_single_process_run": true
+  },
+  "note": "This directory is the canonical logical experiment. Stage-1 SearchBase artifacts come from the completed search run, while PPO and validation artifacts come from the complete fixed-parameter run. Histories were not concatenated because the first PPO run stopped at episode 10 after the pre-fix unequal-N validation aggregation bug."
+}

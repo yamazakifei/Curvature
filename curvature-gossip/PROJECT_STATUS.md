@@ -1,5 +1,17 @@
 # Project Status
 
+## V3.2 searched uniform no-curvature ablation (2026-08-06)
+
+Added `configs/GNN/mpnnV3.2_ch1_search_no_curvature.yaml`, paired with the
+V3.2 result configuration
+`result_GNN/mpnnV3.2_search_ch1_n100_u0.20_Bmax0.10_stage1_no_center/`.
+The configuration keeps the same soft-two-community topology, SearchBase
+pool, PPO settings, and validation horizon, but restricts SearchBase to
+`alpha_candidates: [0.0]`. Therefore the searched Stage-1 probability is
+uniform across nodes. The Stage-2 MPNN Actor disables the detached Stage-1
+reference and curvature edge feature, and the node-conditioned Critic disables
+curvature features, making this a strict no-curvature ablation.
+
 ## Cross-N training path and validation (2026-08-06)
 
 The cross-N YAML files under `configs/GNN/` use the project-local
@@ -8,6 +20,13 @@ pooled SearchBase calibration/search; the resume YAML reuses its selected
 cross-N intercept and alpha and starts PPO from a fresh model.  Fixed
 validation aggregates probability statistics per scenario, so N-dependent
 matrix widths are supported.
+
+The canonical integrated result is
+`result_cross/mpnnV3.2_ch1_cross_n80_120/`.  It keeps the completed Stage-1
+artifacts and uses the complete 300-episode PPO/validation histories and
+`checkpoints/best_validation` from the fixed-parameter run.  See
+`integration_manifest.json` and `INTEGRATION_README.md` for provenance; the
+histories are intentionally not concatenated with the failed partial run.
 
 ## Dual no-curvature ablation
 
@@ -258,3 +277,23 @@ curvature legend explicitly identifies the V3.2 checkpoint.
 At N=100, V3.2 mean VAoI is 5.716 (mean p=0.109) on community topologies and
 4.661 (mean p=0.114) on random-geometric topologies. At u=0.10, the values
 are 2.877 (mean p=0.107) and 2.472 (mean p=0.111), respectively.
+
+## Cross-N MPNN scalability evaluation (2026-08-06)
+
+Added `scripts/run_cross_model_scalability.py` for single-checkpoint
+evaluation. It reuses the 22 YAML files from
+`result_GNN/0806ScalabilityV3.2_N/` byte-for-byte, evaluates the cross-N
+checkpoint on community and random-geometric topologies for N=50--150, and
+keeps the 5 scenarios and 200 slots per node count used by the reference
+experiment. The output also includes matched-random rows and mean actor
+broadcast probability statistics.
+
+Results are stored in
+`result_cross/mpnnV3.2_ch1_cross_n80_120/0806ScalabilityV3.2_N_CrossModel/`.
+The checkpoint provenance is episode 190. At N=100, the cross-N model has
+mean VAoI 5.542 (mean p=0.116) on community topologies and 4.546
+(mean p=0.122) on random-geometric topologies.
+
+The cross-N scalability plots annotate every VAoI point with its corresponding
+mean actor broadcast probability `p`; `--plot-only` in the runner refreshes
+these annotations from the existing summary CSV without rerunning simulation.

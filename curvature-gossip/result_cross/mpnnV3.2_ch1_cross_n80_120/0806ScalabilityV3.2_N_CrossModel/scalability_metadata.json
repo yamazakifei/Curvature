@@ -1,0 +1,62 @@
+{
+  "checkpoint_episode": 190,
+  "configs": {
+    "community": [
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_cross\\mpnnV3.2_ch1_cross_n80_120\\0806ScalabilityV3.2_N_CrossModel\\configs\\community\\n050.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_cross\\mpnnV3.2_ch1_cross_n80_120\\0806ScalabilityV3.2_N_CrossModel\\configs\\community\\n060.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_cross\\mpnnV3.2_ch1_cross_n80_120\\0806ScalabilityV3.2_N_CrossModel\\configs\\community\\n070.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_cross\\mpnnV3.2_ch1_cross_n80_120\\0806ScalabilityV3.2_N_CrossModel\\configs\\community\\n080.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_cross\\mpnnV3.2_ch1_cross_n80_120\\0806ScalabilityV3.2_N_CrossModel\\configs\\community\\n090.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_cross\\mpnnV3.2_ch1_cross_n80_120\\0806ScalabilityV3.2_N_CrossModel\\configs\\community\\n100.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_cross\\mpnnV3.2_ch1_cross_n80_120\\0806ScalabilityV3.2_N_CrossModel\\configs\\community\\n110.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_cross\\mpnnV3.2_ch1_cross_n80_120\\0806ScalabilityV3.2_N_CrossModel\\configs\\community\\n120.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_cross\\mpnnV3.2_ch1_cross_n80_120\\0806ScalabilityV3.2_N_CrossModel\\configs\\community\\n130.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_cross\\mpnnV3.2_ch1_cross_n80_120\\0806ScalabilityV3.2_N_CrossModel\\configs\\community\\n140.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_cross\\mpnnV3.2_ch1_cross_n80_120\\0806ScalabilityV3.2_N_CrossModel\\configs\\community\\n150.yaml"
+    ],
+    "random": [
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_cross\\mpnnV3.2_ch1_cross_n80_120\\0806ScalabilityV3.2_N_CrossModel\\configs\\random\\n050.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_cross\\mpnnV3.2_ch1_cross_n80_120\\0806ScalabilityV3.2_N_CrossModel\\configs\\random\\n060.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_cross\\mpnnV3.2_ch1_cross_n80_120\\0806ScalabilityV3.2_N_CrossModel\\configs\\random\\n070.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_cross\\mpnnV3.2_ch1_cross_n80_120\\0806ScalabilityV3.2_N_CrossModel\\configs\\random\\n080.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_cross\\mpnnV3.2_ch1_cross_n80_120\\0806ScalabilityV3.2_N_CrossModel\\configs\\random\\n090.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_cross\\mpnnV3.2_ch1_cross_n80_120\\0806ScalabilityV3.2_N_CrossModel\\configs\\random\\n100.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_cross\\mpnnV3.2_ch1_cross_n80_120\\0806ScalabilityV3.2_N_CrossModel\\configs\\random\\n110.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_cross\\mpnnV3.2_ch1_cross_n80_120\\0806ScalabilityV3.2_N_CrossModel\\configs\\random\\n120.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_cross\\mpnnV3.2_ch1_cross_n80_120\\0806ScalabilityV3.2_N_CrossModel\\configs\\random\\n130.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_cross\\mpnnV3.2_ch1_cross_n80_120\\0806ScalabilityV3.2_N_CrossModel\\configs\\random\\n140.yaml",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_cross\\mpnnV3.2_ch1_cross_n80_120\\0806ScalabilityV3.2_N_CrossModel\\configs\\random\\n150.yaml"
+    ]
+  },
+  "density_scaling": "reused from 0806ScalabilityV3.2_N",
+  "evaluation": "cross-N MPNN checkpoint on the existing 0806ScalabilityV3.2_N scenarios",
+  "evaluation_master_seed": 20260804,
+  "model_dir": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_cross\\mpnnV3.2_ch1_cross_n80_120",
+  "node_counts": [
+    50,
+    60,
+    70,
+    80,
+    90,
+    100,
+    110,
+    120,
+    130,
+    140,
+    150
+  ],
+  "plots": {
+    "community": [
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_cross\\mpnnV3.2_ch1_cross_n80_120\\0806ScalabilityV3.2_N_CrossModel\\scalability_community.png",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_cross\\mpnnV3.2_ch1_cross_n80_120\\0806ScalabilityV3.2_N_CrossModel\\scalability_community.pdf"
+    ],
+    "random": [
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_cross\\mpnnV3.2_ch1_cross_n80_120\\0806ScalabilityV3.2_N_CrossModel\\scalability_random.png",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_cross\\mpnnV3.2_ch1_cross_n80_120\\0806ScalabilityV3.2_N_CrossModel\\scalability_random.pdf"
+    ]
+  },
+  "scenarios_per_node_count": 5,
+  "slots_per_scenario": 200,
+  "source_config_root": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0806ScalabilityV3.2_N",
+  "summary_note": "scalability_summary.csv includes mean_action_probability for each VAoI row"
+}

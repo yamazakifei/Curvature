@@ -1,0 +1,2 @@
+model_checkpoint_path: "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_cross\\mpnnV3.2_ch1_cross_n80_120\\checkpoints\\best_validation\\model"
+all_model_checkpoint_paths: "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_cross\\mpnnV3.2_ch1_cross_n80_120\\checkpoints\\best_validation\\model"

@@ -1,2 +1,0 @@
-model_checkpoint_path: "D:\\ZMF\\2026Curvature\\result_GNN_cross_n80_120_resume\\mpnnV3.2_ch1_cross_n80_120_resume\\checkpoints\\best_validation\\model"
-all_model_checkpoint_paths: "D:\\ZMF\\2026Curvature\\result_GNN_cross_n80_120_resume\\mpnnV3.2_ch1_cross_n80_120_resume\\checkpoints\\best_validation\\model"
