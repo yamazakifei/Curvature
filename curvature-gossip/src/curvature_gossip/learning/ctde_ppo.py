@@ -33,7 +33,8 @@ class CTDEPPO:
     def __init__(self, learning_rate=3e-4, clip_ratio=0.2, entropy_coefficient=0.01,
                  seed=0, session_config=None, actor_config=None,
                  critic_config=None, actor_learning_rate=None, critic_learning_rate=None,
-                 common_mode_coefficient=0.0) -> None:
+                 common_mode_coefficient=0.0,
+                 probability_budget_coefficient=0.0) -> None:
         import tensorflow as tensorflow
 
         # Keep the original shared argument while allowing either optimizer to override it.
@@ -51,6 +52,10 @@ class CTDEPPO:
         self.common_mode_coefficient = float(common_mode_coefficient)
         if not np.isfinite(self.common_mode_coefficient) or self.common_mode_coefficient < 0.0:
             raise ValueError("common_mode_coefficient must be finite and nonnegative")
+        self.probability_budget_coefficient = float(probability_budget_coefficient)
+        if (not np.isfinite(self.probability_budget_coefficient)
+                or self.probability_budget_coefficient < 0.0):
+            raise ValueError("probability_budget_coefficient must be finite and nonnegative")
         self.actor_config = dict(actor_config or {})
         self.critic_config = dict(critic_config or {})
         self.critic_architecture = str(self.critic_config.get("architecture", "scalar_global"))
@@ -97,6 +102,7 @@ class CTDEPPO:
             self._build_graph(
                 self.actor_learning_rate, self.critic_learning_rate,
                 float(clip_ratio), float(entropy_coefficient), self.common_mode_coefficient,
+                self.probability_budget_coefficient,
             )
             self.saver = self.tf.train.Saver(max_to_keep=None)
             self.init_op = self.tf.global_variables_initializer()
@@ -295,7 +301,7 @@ class CTDEPPO:
 
     def _build_graph(
         self, actor_learning_rate, critic_learning_rate, clip_ratio,
-        entropy_coefficient, common_mode_coefficient,
+        entropy_coefficient, common_mode_coefficient, probability_budget_coefficient,
     ):
         tf = self.tf
         self.actions = tf.placeholder(tf.float32, [None], name="actions")
@@ -309,6 +315,12 @@ class CTDEPPO:
         self.surrogate_actor_loss = -tf.reduce_mean(tf.minimum(ratio * self.advantages, clipped * self.advantages))
         self.mean_entropy = tf.reduce_mean(distribution.entropy())
         self.common_mode_loss = tf.constant(0.0, dtype=tf.float32, name="common_mode_loss")
+        self.probability_budget_loss = tf.constant(
+            0.0, dtype=tf.float32, name="probability_budget_loss"
+        )
+        self.probability_budget_excess = tf.constant(
+            0.0, dtype=tf.float32, name="probability_budget_excess"
+        )
         self.actor_step_ids = None
         self.number_of_steps = None
         if self.actor_stage == 2:
@@ -325,10 +337,35 @@ class CTDEPPO:
             self.common_mode_loss = tf.identity(
                 tf.reduce_mean(tf.square(residual_mean)), name="common_mode_loss"
             )
+            if probability_budget_coefficient > 0.0:
+                # Penalize the mean probability of each rollout step when it
+                # exceeds that step's Bmax; Stage-1 remains untouched.
+                probability_sum = tf.math.unsorted_segment_sum(
+                    self.probabilities, self.actor_step_ids, self.number_of_steps
+                )
+                probability_count = tf.math.unsorted_segment_sum(
+                    tf.ones_like(self.probabilities), self.actor_step_ids, self.number_of_steps
+                )
+                step_mean_probability = probability_sum / tf.maximum(probability_count, 1.0)
+                bmax_sum = tf.math.unsorted_segment_sum(
+                    self.target_tx_ratios, self.actor_step_ids, self.number_of_steps
+                )
+                step_bmax = bmax_sum / tf.maximum(probability_count, 1.0)
+                relative_excess = tf.nn.relu(
+                    (step_mean_probability - step_bmax) / tf.maximum(step_bmax, 1e-6)
+                )
+                self.probability_budget_excess = tf.identity(
+                    tf.reduce_mean(relative_excess), name="probability_budget_excess"
+                )
+                self.probability_budget_loss = tf.identity(
+                    probability_budget_coefficient * tf.reduce_mean(tf.square(relative_excess)),
+                    name="probability_budget_loss",
+                )
         self.actor_loss = (
             self.surrogate_actor_loss
             - entropy_coefficient * self.mean_entropy
             + common_mode_coefficient * self.common_mode_loss
+            + self.probability_budget_loss
         )
         self.approx_kl = tf.reduce_mean(self.old_log_probabilities - self.log_probabilities)
         self.clip_fraction = tf.reduce_mean(tf.cast(tf.abs(ratio - 1.0) > clip_ratio, tf.float32))
@@ -508,13 +545,16 @@ class CTDEPPO:
                 self.returns: critic_batch["returns"],
             }
         for _ in range(int(epochs)):
-            actor_loss, entropy, approx_kl, clip_fraction, common_loss, _ = self.session.run(
+            actor_loss, entropy, approx_kl, clip_fraction, common_loss, probability_loss, probability_excess, _ = self.session.run(
                 [self.actor_loss, self.mean_entropy, self.approx_kl, self.clip_fraction,
-                 self.common_mode_loss, self.actor_train_op], feed_dict=actor_feed)
+                 self.common_mode_loss, self.probability_budget_loss,
+                 self.probability_budget_excess, self.actor_train_op], feed_dict=actor_feed)
             critic_loss, _ = self.session.run([self.critic_loss, self.critic_train_op], feed_dict=critic_feed)
         return {"actor_loss": float(actor_loss), "critic_loss": float(critic_loss), "entropy": float(entropy),
                 "approx_kl": float(approx_kl), "clip_fraction": float(clip_fraction),
-                "common_mode_loss": float(common_loss)}
+                "common_mode_loss": float(common_loss),
+                "probability_budget_loss": float(probability_loss),
+                "probability_budget_excess": float(probability_excess)}
 
     def policy_gradient_norm(self, actor_batch: Mapping) -> float:
         feed = self._actor_batch_feed(actor_batch)

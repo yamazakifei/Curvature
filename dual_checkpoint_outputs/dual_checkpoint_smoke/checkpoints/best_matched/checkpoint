@@ -1,0 +1,2 @@
+model_checkpoint_path: "D:\\ZMF\\2026Curvature\\dual_checkpoint_outputs\\dual_checkpoint_smoke\\checkpoints\\best_matched\\model"
+all_model_checkpoint_paths: "D:\\ZMF\\2026Curvature\\dual_checkpoint_outputs\\dual_checkpoint_smoke\\checkpoints\\best_matched\\model"

@@ -1,5 +1,51 @@
 # Project Status
 
+## V3.3 mean-probability Bmax regularization (2026-08-07)
+
+Added the Stage-2-only one-sided probability-space penalty
+`lambda * relu((mean_probability - Bmax) / Bmax)^2`, evaluated independently
+for each rollout step.  The new single-N retraining config is
+`configs/GNN/mpnnV3.3_ch1_Bpen_search.yaml`, with target output
+`result_GNN/mpnnV3.3_Bpen_ch1_n100_u0.20_Bmax0.10_stage1_reused/`.
+It uses the `soft_two_community` topology and reuses the selected V3.2
+community-topology Stage-1 values (`b=0.096875`, `alpha=1.5`,
+`beta0=-2.87408447265625`); it does not use the random-geometric result.
+The Stage-2 penalty coefficient is `0.8` in the current training config.
+For cross-N retraining, use
+`configs/GNN/mpnnV3.3_ch1_Bpen_cross_n80_120.yaml`; it reuses the V3.2
+cross-N Stage-1 values (`b=0.096875`, `alpha=1.5`,
+`beta0=-2.8892974853515625`) and writes to the renamed outer container
+`result_cross/result_GNN_cross_n80_120_v3_3_noBase/`, with the actual
+experiment under the `id` directory `mpnnV3.3_Bpen_ch1_cross_n80_120/`.
+
+## V3.3 single-N versus cross-N generalization (2026-08-11)
+
+Added `scripts/compare_v33_n_generalization.py` to compare the V3.3
+single-N checkpoint `mpnnV3.3_Bpen_ch1_n100_u0.20_Bmax0.10_stage1_reused`
+with the V3.3 cross-N checkpoint
+`mpnnV3.3_Bpen_ch1_cross_n80_120`.  The evaluation copies the community and
+random-geometric scenario YAMLs from `result_GNN/0806ScalabilityV3.2_N/`
+unchanged, and evaluates N=50--150 at 200 slots over five scenarios per N.
+The neural-policy summaries retain mean VAoI, actual transmission ratio, and
+mean Actor broadcast probability.
+
+Results are stored in
+`result_cross/mpnnV3.3_Bpen_ch1_cross_n80_120/0811ScalabilityV3.3_N/`.
+The cross-N model is better on 10/11 community N values and 9/11
+random-geometric N values; at N=100 its mean VAoI is 6.084 versus 6.300 on
+community topologies and 5.051 versus 5.154 on random-geometric topologies.
+
+## Dual validation checkpoints (2026-08-07)
+
+The PPO trainer now keeps two independent validation optima.  The
+unconditional `checkpoints/best_validation` minimizes validation mean VAoI
+without a probability filter.  The
+`checkpoints/best_validation_Bmax` checkpoint minimizes the same metric only
+when the validation mean Actor broadcast probability is no greater than
+`constraints.max_tx_ratio` (Bmax).  The validation history records the Bmax
+value, feasibility flag, and both best-checkpoint flags; the average broadcast
+probability remains available in `nn_mean_action_probability`.
+
 ## V3.2 searched uniform no-curvature ablation (2026-08-06)
 
 Added `configs/GNN/mpnnV3.2_ch1_search_no_curvature.yaml`, paired with the

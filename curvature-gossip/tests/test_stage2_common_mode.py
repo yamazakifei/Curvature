@@ -135,3 +135,28 @@ def test_zero_coefficient_preserves_old_actor_loss_and_penalty_gradient_reaches_
         assert np.isfinite(losses["common_mode_loss"])
     finally:
         model.close()
+
+
+def test_mean_probability_budget_penalty_is_one_sided_and_normalized_by_bmax():
+    """The Stage-2 loss penalizes a rollout mean only when it exceeds Bmax."""
+    actor = _mlp_actor()
+    actor["curvature"].update({"base_tx_ratio": 0.5, "alpha_override": 0.0})
+    model = CTDEPPO(
+        seed=106, actor_config=actor, probability_budget_coefficient=1.0
+    )
+    try:
+        batch = model.actor_batch_inputs([_mlp_encoded()])
+        feed = model._actor_batch_feed(batch)
+        feed.update({
+            model.actor_step_ids: batch["step_ids"],
+            model.number_of_steps: batch["number_of_steps"],
+        })
+        loss, excess = model.session.run(
+            [model.probability_budget_loss, model.probability_budget_excess],
+            feed_dict=feed,
+        )
+        # (0.5 - 0.1) / 0.1 = 4, so the normalized squared penalty is 16.
+        assert np.isclose(excess, 4.0)
+        assert np.isclose(loss, 16.0)
+    finally:
+        model.close()

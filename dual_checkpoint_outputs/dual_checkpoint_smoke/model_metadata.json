@@ -1,0 +1,67 @@
+{
+  "actor": {
+    "curvature": {
+      "base_tx_ratio": 0.1
+    }
+  },
+  "actor_curvature_enabled": true,
+  "actor_learning_rate": 0.0003,
+  "best_train_mean_VAoI": 0.6525858556230862,
+  "best_validation_Bmax_checkpoint": "D:\\ZMF\\2026Curvature\\dual_checkpoint_outputs\\dual_checkpoint_smoke\\checkpoints\\best_validation_Bmax\\model",
+  "best_validation_Bmax_mean_VAoI": 0.7765690235690237,
+  "best_validation_checkpoint": "D:\\ZMF\\2026Curvature\\dual_checkpoint_outputs\\dual_checkpoint_smoke\\checkpoints\\best_validation\\model",
+  "best_validation_mean_VAoI": 0.7765690235690237,
+  "budget_relative_tolerance": 0.05,
+  "checkpoint": "D:\\ZMF\\2026Curvature\\dual_checkpoint_outputs\\dual_checkpoint_smoke\\checkpoints\\latest\\model",
+  "checkpoint_every_episodes": 1,
+  "checkpoint_mode": "periodic_and_latest",
+  "common_mode_coefficient": 0.0,
+  "consecutive_tx_scale": 3.0,
+  "critic": {
+    "architecture": "scalar_global",
+    "input_dim": 8
+  },
+  "critic_architecture": "scalar_global",
+  "critic_curvature_enabled": true,
+  "critic_input_dim": 8,
+  "critic_input_feature_names": [
+    "legacy_global_0",
+    "legacy_global_1",
+    "legacy_global_2",
+    "legacy_global_3",
+    "legacy_global_4",
+    "legacy_global_5",
+    "legacy_global_6",
+    "legacy_global_7"
+  ],
+  "critic_learning_rate": 0.0003,
+  "curvature_ablation_mode": false,
+  "episodes": 2,
+  "initial_checkpoint": null,
+  "initial_multiplier": 0.0,
+  "model_version": "node_only_freshness_lagrangian_v3",
+  "mpnn_disabled_edge_feature": null,
+  "multiplier_error_clip": 1.0,
+  "multiplier_learning_rate": 0.01,
+  "multiplier_max": 0.15,
+  "neighbor_confidence_time_constant": 20.0,
+  "node_counts": [
+    100
+  ],
+  "per_node_cap_multiplier": 1.5,
+  "restored_variables": [],
+  "target_tx_ratios": [
+    0.1
+  ],
+  "tx_ratio_ema_beta": 0.5,
+  "update_multiplier": false,
+  "update_probabilities": [
+    0.05
+  ],
+  "use_budget_advantage": false,
+  "validation_bmax": 0.1,
+  "validation_enabled": true,
+  "validation_every_episodes": 1,
+  "validation_trigger": "every_episodes",
+  "vaoi_reward_scale": 0.1
+}

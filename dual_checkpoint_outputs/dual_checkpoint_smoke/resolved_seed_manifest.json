@@ -1,0 +1,610 @@
+{
+  "manifest_fingerprint": "23d42bab4feda77226c3173ec91db45272eed8a3ed3746743d31999e61c7596e",
+  "master_seed": 20260723,
+  "mode": "legacy_explicit",
+  "pool_namespaces": {
+    "calibration": "stage1_calibration",
+    "search": "stage1_search",
+    "training": "stage2_training",
+    "validation": "fixed_validation"
+  },
+  "pools": {
+    "calibration": {
+      "count": 32,
+      "topologies": [
+        {
+          "topology_index": 0,
+          "topology_seed": 126834539
+        },
+        {
+          "topology_index": 1,
+          "topology_seed": 719687981
+        },
+        {
+          "topology_index": 2,
+          "topology_seed": 834887161
+        },
+        {
+          "topology_index": 3,
+          "topology_seed": 3586758026
+        },
+        {
+          "topology_index": 4,
+          "topology_seed": 3853705339
+        },
+        {
+          "topology_index": 5,
+          "topology_seed": 2236227115
+        },
+        {
+          "topology_index": 6,
+          "topology_seed": 170172576
+        },
+        {
+          "topology_index": 7,
+          "topology_seed": 1751996353
+        },
+        {
+          "topology_index": 8,
+          "topology_seed": 2539702401
+        },
+        {
+          "topology_index": 9,
+          "topology_seed": 1319310308
+        },
+        {
+          "topology_index": 10,
+          "topology_seed": 4174557013
+        },
+        {
+          "topology_index": 11,
+          "topology_seed": 2390889335
+        },
+        {
+          "topology_index": 12,
+          "topology_seed": 2110228248
+        },
+        {
+          "topology_index": 13,
+          "topology_seed": 3751300550
+        },
+        {
+          "topology_index": 14,
+          "topology_seed": 3958979203
+        },
+        {
+          "topology_index": 15,
+          "topology_seed": 4101205616
+        },
+        {
+          "topology_index": 16,
+          "topology_seed": 983250188
+        },
+        {
+          "topology_index": 17,
+          "topology_seed": 2292600428
+        },
+        {
+          "topology_index": 18,
+          "topology_seed": 1033139115
+        },
+        {
+          "topology_index": 19,
+          "topology_seed": 1738604429
+        },
+        {
+          "topology_index": 20,
+          "topology_seed": 2922653207
+        },
+        {
+          "topology_index": 21,
+          "topology_seed": 2775667523
+        },
+        {
+          "topology_index": 22,
+          "topology_seed": 2407435106
+        },
+        {
+          "topology_index": 23,
+          "topology_seed": 343149857
+        },
+        {
+          "topology_index": 24,
+          "topology_seed": 3398084832
+        },
+        {
+          "topology_index": 25,
+          "topology_seed": 2218337456
+        },
+        {
+          "topology_index": 26,
+          "topology_seed": 2436629555
+        },
+        {
+          "topology_index": 27,
+          "topology_seed": 4265636116
+        },
+        {
+          "topology_index": 28,
+          "topology_seed": 2313113517
+        },
+        {
+          "topology_index": 29,
+          "topology_seed": 516609087
+        },
+        {
+          "topology_index": 30,
+          "topology_seed": 769494068
+        },
+        {
+          "topology_index": 31,
+          "topology_seed": 3240206425
+        }
+      ]
+    },
+    "search": {
+      "dynamic_repeats": 2,
+      "topologies": [
+        {
+          "dynamic_repeats": [
+            {
+              "action_seed": 1826989631,
+              "dynamic_repeat_index": 0,
+              "fading_seed": 2269617471,
+              "shadowing_seed": 2691921535,
+              "source_update_seed": 1814186830
+            },
+            {
+              "action_seed": 3641111825,
+              "dynamic_repeat_index": 1,
+              "fading_seed": 2885716697,
+              "shadowing_seed": 4120862698,
+              "source_update_seed": 1586097226
+            }
+          ],
+          "topology_index": 0,
+          "topology_seed": 1694852306
+        },
+        {
+          "dynamic_repeats": [
+            {
+              "action_seed": 3111172046,
+              "dynamic_repeat_index": 0,
+              "fading_seed": 3347615194,
+              "shadowing_seed": 2632497224,
+              "source_update_seed": 1211591278
+            },
+            {
+              "action_seed": 4164493186,
+              "dynamic_repeat_index": 1,
+              "fading_seed": 3019921795,
+              "shadowing_seed": 1561916812,
+              "source_update_seed": 458722803
+            }
+          ],
+          "topology_index": 1,
+          "topology_seed": 2996672222
+        },
+        {
+          "dynamic_repeats": [
+            {
+              "action_seed": 3186814629,
+              "dynamic_repeat_index": 0,
+              "fading_seed": 2136709659,
+              "shadowing_seed": 1146429087,
+              "source_update_seed": 826579428
+            },
+            {
+              "action_seed": 3575258533,
+              "dynamic_repeat_index": 1,
+              "fading_seed": 4078796863,
+              "shadowing_seed": 3964220040,
+              "source_update_seed": 3686529439
+            }
+          ],
+          "topology_index": 2,
+          "topology_seed": 2002663006
+        },
+        {
+          "dynamic_repeats": [
+            {
+              "action_seed": 809018357,
+              "dynamic_repeat_index": 0,
+              "fading_seed": 1880489042,
+              "shadowing_seed": 836450055,
+              "source_update_seed": 74586591
+            },
+            {
+              "action_seed": 2467096496,
+              "dynamic_repeat_index": 1,
+              "fading_seed": 93522293,
+              "shadowing_seed": 1782136446,
+              "source_update_seed": 2110000720
+            }
+          ],
+          "topology_index": 3,
+          "topology_seed": 3382864721
+        },
+        {
+          "dynamic_repeats": [
+            {
+              "action_seed": 3546037744,
+              "dynamic_repeat_index": 0,
+              "fading_seed": 4060838005,
+              "shadowing_seed": 3672495821,
+              "source_update_seed": 774809413
+            },
+            {
+              "action_seed": 1859515617,
+              "dynamic_repeat_index": 1,
+              "fading_seed": 209291210,
+              "shadowing_seed": 3500245711,
+              "source_update_seed": 4225869836
+            }
+          ],
+          "topology_index": 4,
+          "topology_seed": 2789019329
+        },
+        {
+          "dynamic_repeats": [
+            {
+              "action_seed": 974340,
+              "dynamic_repeat_index": 0,
+              "fading_seed": 1028158893,
+              "shadowing_seed": 1022953169,
+              "source_update_seed": 3748644893
+            },
+            {
+              "action_seed": 2805139607,
+              "dynamic_repeat_index": 1,
+              "fading_seed": 960044518,
+              "shadowing_seed": 910180171,
+              "source_update_seed": 3907637679
+            }
+          ],
+          "topology_index": 5,
+          "topology_seed": 2436399528
+        },
+        {
+          "dynamic_repeats": [
+            {
+              "action_seed": 956749807,
+              "dynamic_repeat_index": 0,
+              "fading_seed": 4245858913,
+              "shadowing_seed": 1737109024,
+              "source_update_seed": 2646060083
+            },
+            {
+              "action_seed": 583597549,
+              "dynamic_repeat_index": 1,
+              "fading_seed": 92372974,
+              "shadowing_seed": 399489020,
+              "source_update_seed": 2184178579
+            }
+          ],
+          "topology_index": 6,
+          "topology_seed": 4057209288
+        },
+        {
+          "dynamic_repeats": [
+            {
+              "action_seed": 1124614467,
+              "dynamic_repeat_index": 0,
+              "fading_seed": 3423802600,
+              "shadowing_seed": 1216067610,
+              "source_update_seed": 521437444
+            },
+            {
+              "action_seed": 2647020632,
+              "dynamic_repeat_index": 1,
+              "fading_seed": 3798349575,
+              "shadowing_seed": 469027208,
+              "source_update_seed": 2987613498
+            }
+          ],
+          "topology_index": 7,
+          "topology_seed": 1057163707
+        },
+        {
+          "dynamic_repeats": [
+            {
+              "action_seed": 1356512762,
+              "dynamic_repeat_index": 0,
+              "fading_seed": 2054286528,
+              "shadowing_seed": 1885549687,
+              "source_update_seed": 758960402
+            },
+            {
+              "action_seed": 2566924418,
+              "dynamic_repeat_index": 1,
+              "fading_seed": 2122008817,
+              "shadowing_seed": 2187471571,
+              "source_update_seed": 3910651132
+            }
+          ],
+          "topology_index": 8,
+          "topology_seed": 4059820067
+        },
+        {
+          "dynamic_repeats": [
+            {
+              "action_seed": 1274851489,
+              "dynamic_repeat_index": 0,
+              "fading_seed": 3539726375,
+              "shadowing_seed": 3854331453,
+              "source_update_seed": 3072615792
+            },
+            {
+              "action_seed": 1884521768,
+              "dynamic_repeat_index": 1,
+              "fading_seed": 444540981,
+              "shadowing_seed": 4183513119,
+              "source_update_seed": 44671792
+            }
+          ],
+          "topology_index": 9,
+          "topology_seed": 2684453897
+        },
+        {
+          "dynamic_repeats": [
+            {
+              "action_seed": 3655862609,
+              "dynamic_repeat_index": 0,
+              "fading_seed": 2730357259,
+              "shadowing_seed": 2038773127,
+              "source_update_seed": 4230024034
+            },
+            {
+              "action_seed": 3706883827,
+              "dynamic_repeat_index": 1,
+              "fading_seed": 2215074946,
+              "shadowing_seed": 1140729088,
+              "source_update_seed": 4021726998
+            }
+          ],
+          "topology_index": 10,
+          "topology_seed": 3897593845
+        },
+        {
+          "dynamic_repeats": [
+            {
+              "action_seed": 1666804332,
+              "dynamic_repeat_index": 0,
+              "fading_seed": 1277639811,
+              "shadowing_seed": 3238667983,
+              "source_update_seed": 1971424925
+            },
+            {
+              "action_seed": 3931692729,
+              "dynamic_repeat_index": 1,
+              "fading_seed": 409478332,
+              "shadowing_seed": 3301179105,
+              "source_update_seed": 3210605565
+            }
+          ],
+          "topology_index": 11,
+          "topology_seed": 1345651350
+        },
+        {
+          "dynamic_repeats": [
+            {
+              "action_seed": 2629424572,
+              "dynamic_repeat_index": 0,
+              "fading_seed": 4216247689,
+              "shadowing_seed": 2770764290,
+              "source_update_seed": 3311978532
+            },
+            {
+              "action_seed": 3804312020,
+              "dynamic_repeat_index": 1,
+              "fading_seed": 2903929474,
+              "shadowing_seed": 3163153099,
+              "source_update_seed": 1615825061
+            }
+          ],
+          "topology_index": 12,
+          "topology_seed": 3910952248
+        },
+        {
+          "dynamic_repeats": [
+            {
+              "action_seed": 2724029677,
+              "dynamic_repeat_index": 0,
+              "fading_seed": 3597934648,
+              "shadowing_seed": 1881536898,
+              "source_update_seed": 1133050320
+            },
+            {
+              "action_seed": 438622763,
+              "dynamic_repeat_index": 1,
+              "fading_seed": 2497149467,
+              "shadowing_seed": 2650026896,
+              "source_update_seed": 1085125476
+            }
+          ],
+          "topology_index": 13,
+          "topology_seed": 2429611945
+        },
+        {
+          "dynamic_repeats": [
+            {
+              "action_seed": 2943203893,
+              "dynamic_repeat_index": 0,
+              "fading_seed": 2816736363,
+              "shadowing_seed": 2902306806,
+              "source_update_seed": 2129643251
+            },
+            {
+              "action_seed": 2360347451,
+              "dynamic_repeat_index": 1,
+              "fading_seed": 474563611,
+              "shadowing_seed": 870736588,
+              "source_update_seed": 2650731630
+            }
+          ],
+          "topology_index": 14,
+          "topology_seed": 184049157
+        },
+        {
+          "dynamic_repeats": [
+            {
+              "action_seed": 1003405563,
+              "dynamic_repeat_index": 0,
+              "fading_seed": 2613173768,
+              "shadowing_seed": 452609794,
+              "source_update_seed": 4063805918
+            },
+            {
+              "action_seed": 2308609731,
+              "dynamic_repeat_index": 1,
+              "fading_seed": 2275358748,
+              "shadowing_seed": 1367404665,
+              "source_update_seed": 2997132989
+            }
+          ],
+          "topology_index": 15,
+          "topology_seed": 1227258088
+        },
+        {
+          "dynamic_repeats": [
+            {
+              "action_seed": 188493493,
+              "dynamic_repeat_index": 0,
+              "fading_seed": 1921428890,
+              "shadowing_seed": 2324857140,
+              "source_update_seed": 1615879555
+            },
+            {
+              "action_seed": 1583385009,
+              "dynamic_repeat_index": 1,
+              "fading_seed": 2946014292,
+              "shadowing_seed": 1728871278,
+              "source_update_seed": 1987650772
+            }
+          ],
+          "topology_index": 16,
+          "topology_seed": 2974325103
+        },
+        {
+          "dynamic_repeats": [
+            {
+              "action_seed": 2871148313,
+              "dynamic_repeat_index": 0,
+              "fading_seed": 428444733,
+              "shadowing_seed": 2724542249,
+              "source_update_seed": 839574958
+            },
+            {
+              "action_seed": 2632785901,
+              "dynamic_repeat_index": 1,
+              "fading_seed": 1156094208,
+              "shadowing_seed": 99952188,
+              "source_update_seed": 65016397
+            }
+          ],
+          "topology_index": 17,
+          "topology_seed": 1319012252
+        },
+        {
+          "dynamic_repeats": [
+            {
+              "action_seed": 895062826,
+              "dynamic_repeat_index": 0,
+              "fading_seed": 3539357862,
+              "shadowing_seed": 2647864406,
+              "source_update_seed": 3362649737
+            },
+            {
+              "action_seed": 2714938060,
+              "dynamic_repeat_index": 1,
+              "fading_seed": 4107175223,
+              "shadowing_seed": 2928449653,
+              "source_update_seed": 1725506384
+            }
+          ],
+          "topology_index": 18,
+          "topology_seed": 4094380593
+        },
+        {
+          "dynamic_repeats": [
+            {
+              "action_seed": 557377924,
+              "dynamic_repeat_index": 0,
+              "fading_seed": 514897758,
+              "shadowing_seed": 4228897964,
+              "source_update_seed": 3438869160
+            },
+            {
+              "action_seed": 2933190473,
+              "dynamic_repeat_index": 1,
+              "fading_seed": 42023138,
+              "shadowing_seed": 2156283745,
+              "source_update_seed": 3413575749
+            }
+          ],
+          "topology_index": 19,
+          "topology_seed": 1446218396
+        }
+      ],
+      "topology_count": 20
+    },
+    "training": {
+      "count": 2,
+      "episodes": [
+        {
+          "action_seed": 114195560,
+          "episode_index": 0,
+          "fading_seed": 1038797055,
+          "shadowing_seed": 3838816444,
+          "source_update_seed": 3807280558,
+          "topology_seed": 2258257870
+        },
+        {
+          "action_seed": 2286404556,
+          "episode_index": 1,
+          "fading_seed": 301739303,
+          "shadowing_seed": 739799350,
+          "source_update_seed": 1239462274,
+          "topology_seed": 303318482
+        }
+      ]
+    },
+    "validation": {
+      "mode": "explicit",
+      "scenarios": [
+        {
+          "channel_fading_seed": 82000,
+          "channel_shadowing_seed": 72000,
+          "id": "smoke_v0",
+          "n_nodes": 100,
+          "policy_action_seed": 92000,
+          "slots": 30,
+          "source_update_seed": 62000,
+          "target_tx_ratio": 0.1,
+          "topology_seed": 52000,
+          "update_probability": 0.05
+        },
+        {
+          "channel_fading_seed": 82001,
+          "channel_shadowing_seed": 72001,
+          "id": "smoke_v1",
+          "n_nodes": 100,
+          "policy_action_seed": 92001,
+          "slots": 30,
+          "source_update_seed": 62001,
+          "target_tx_ratio": 0.1,
+          "topology_seed": 52001,
+          "update_probability": 0.05
+        }
+      ]
+    }
+  },
+  "process_namespaces": [
+    "topology",
+    "source_updates",
+    "shadowing",
+    "fading",
+    "actions"
+  ],
+  "seed_derivation_version": "v1"
+}

@@ -7,7 +7,7 @@ import numpy as np
 import yaml
 
 from curvature_gossip.learning.ctde_ppo import CTDEPPO
-from curvature_gossip.learning.trainer import _write_csv_history
+from curvature_gossip.learning.trainer import _is_bmax_feasible, _write_csv_history
 from curvature_gossip.learning.validation import evaluate_fixed_validation, probability_statistics
 
 
@@ -99,3 +99,10 @@ def test_probability_statistics_accepts_cross_n_validation_matrices():
     assert np.isclose(statistics["action_prob_mean"], 0.32)
     assert np.isclose(statistics["action_prob_min"], 0.1)
     assert np.isclose(statistics["action_prob_max"], 0.6)
+
+
+def test_bmax_checkpoint_feasibility_uses_mean_broadcast_probability():
+    """Bmax selection accepts the boundary but rejects an actual probability excess."""
+    assert _is_bmax_feasible(0.10, 0.10)
+    assert _is_bmax_feasible(0.10 + 1e-13, 0.10)
+    assert not _is_bmax_feasible(0.100001, 0.10)

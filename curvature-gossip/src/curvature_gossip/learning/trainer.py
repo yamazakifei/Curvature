@@ -225,6 +225,13 @@ def _save_checkpoint(model: CTDEPPO, output_directory: Path, name: str, episode:
     return checkpoint
 
 
+def _is_bmax_feasible(mean_action_probability: float, bmax: float) -> bool:
+    """Return whether the validation policy's mean broadcast probability meets Bmax."""
+    # The tiny epsilon only absorbs floating-point round-off at the boundary;
+    # the saved Bmax model remains subject to the configured probability limit.
+    return float(mean_action_probability) <= float(bmax) + 1e-12
+
+
 def _stage1_actor_config(raw: Mapping) -> Mapping:
     """Validate Stage-1 or Stage-2 hierarchy settings and checkpoint feature metadata."""
     actor = dict(raw.get("actor", {}))
@@ -447,6 +454,13 @@ def train_ctde(config_path: str):
     common_mode_coefficient = float(training.get("common_mode_coefficient", 0.0))
     if not np.isfinite(common_mode_coefficient) or common_mode_coefficient < 0.0:
         raise ValueError("training.common_mode_coefficient must be finite and nonnegative")
+    probability_budget_coefficient = float(
+        training.get("probability_budget_coefficient", 0.0)
+    )
+    if not np.isfinite(probability_budget_coefficient) or probability_budget_coefficient < 0.0:
+        raise ValueError(
+            "training.probability_budget_coefficient must be finite and nonnegative"
+        )
     multiplier_max = float(training.get("multiplier_max", 0.15))
     tx_ratio_ema_beta = float(training.get("tx_ratio_ema_beta", 0.9))
     relative_tolerance = float(training.get("budget_relative_tolerance", 0.05))
@@ -487,6 +501,7 @@ def train_ctde(config_path: str):
         entropy_coefficient=float(training.get("entropy_coefficient", 0.01)),
         seed=seed, actor_config=actor_config, critic_config=critic_config,
         common_mode_coefficient=common_mode_coefficient,
+        probability_budget_coefficient=probability_budget_coefficient,
     )
     initial_checkpoint = training.get("initial_checkpoint")
     restored_variables = ()
@@ -512,18 +527,38 @@ def train_ctde(config_path: str):
     validation_per_scenario = []
     best_train_vaoi = float("inf")
     best_nn_vaoi = float("inf")
+    best_bmax_nn_vaoi = float("inf")
     best_matched_delta = float("inf")
+    best_validation_checkpoint = None
+    best_validation_bmax_checkpoint = None
+
+    # Bmax is the global maximum intended broadcast probability used for
+    # selecting the constrained validation checkpoint.
+    validation_bmax = float(constraints.get("max_tx_ratio", 1.0))
+    if not np.isfinite(validation_bmax) or not 0.0 < validation_bmax <= 1.0:
+        raise ValueError("constraints.max_tx_ratio must be finite and in (0, 1]")
 
     def run_validation(checkpoint_episode: int, checkpoint_label: str, trigger_train_vaoi=None) -> None:
         """Evaluate frozen parameters and update the fixed-validation CSV artifacts."""
-        nonlocal best_nn_vaoi, best_matched_delta
+        nonlocal best_nn_vaoi, best_bmax_nn_vaoi, best_matched_delta
+        nonlocal best_validation_checkpoint, best_validation_bmax_checkpoint
         summary_row, scenario_rows = evaluate_fixed_validation(
             model, raw, checkpoint_episode, checkpoint_label
         )
         if trigger_train_vaoi is not None:
             summary_row["trigger_train_mean_VAoI"] = float(trigger_train_vaoi)
         is_validation_best = summary_row["nn_mean_VAoI"] < best_nn_vaoi
+        is_validation_bmax_feasible = _is_bmax_feasible(
+            summary_row["nn_mean_action_probability"], validation_bmax
+        )
+        is_validation_bmax_best = (
+            is_validation_bmax_feasible
+            and summary_row["nn_mean_VAoI"] < best_bmax_nn_vaoi
+        )
         summary_row["is_validation_best"] = bool(is_validation_best)
+        summary_row["validation_bmax"] = validation_bmax
+        summary_row["is_validation_bmax_feasible"] = bool(is_validation_bmax_feasible)
+        summary_row["is_validation_best_Bmax"] = bool(is_validation_bmax_best)
         validation_history.append(summary_row)
         validation_per_scenario.extend(scenario_rows)
         _write_csv_history(output_directory / "validation_history.csv", validation_history)
@@ -532,8 +567,20 @@ def train_ctde(config_path: str):
         )
         if is_validation_best:
             best_nn_vaoi = summary_row["nn_mean_VAoI"]
-            checkpoint_name = "best_validation" if checkpoint_mode == "validation_best_only" else "best"
-            _save_checkpoint(model, output_directory, checkpoint_name, checkpoint_episode, config_path, actor_config)
+            # Always retain the unconstrained validation optimum under the
+            # stable name expected by evaluation and comparison scripts.
+            best_validation_checkpoint = _save_checkpoint(
+                model, output_directory, "best_validation", checkpoint_episode,
+                config_path, actor_config,
+            )
+        if is_validation_bmax_best:
+            best_bmax_nn_vaoi = summary_row["nn_mean_VAoI"]
+            # This checkpoint is selected independently, so an unconstrained
+            # VAoI improvement cannot overwrite the best feasible model.
+            best_validation_bmax_checkpoint = _save_checkpoint(
+                model, output_directory, "best_validation_Bmax", checkpoint_episode,
+                config_path, actor_config,
+            )
         if checkpoint_mode == "periodic_and_latest" and summary_row["delta_vaoi_matched_mean"] < best_matched_delta:
             best_matched_delta = summary_row["delta_vaoi_matched_mean"]
             _save_checkpoint(
@@ -729,6 +776,9 @@ def train_ctde(config_path: str):
                 "actor_loss": losses["actor_loss"], "critic_loss": losses["critic_loss"], "entropy": losses["entropy"], "approx_kl": losses["approx_kl"], "clip_fraction": losses["clip_fraction"],
                 "common_mode_coefficient": common_mode_coefficient,
                 "common_mode_loss": losses["common_mode_loss"],
+                "probability_budget_coefficient": probability_budget_coefficient,
+                "probability_budget_loss": losses["probability_budget_loss"],
+                "probability_budget_excess": losses["probability_budget_excess"],
                 "ppo_policy_gradient_norm": vaoi_gradient_norm,
                 "total_actor_gradient_norm": total_actor_gradient_norm,
                 "common_mode_gradient_norm": common_mode_gradient_norm,
@@ -882,6 +932,7 @@ def train_ctde(config_path: str):
             else None
         ),
         "common_mode_coefficient": common_mode_coefficient,
+        "probability_budget_coefficient": probability_budget_coefficient,
         "initial_checkpoint": initial_checkpoint,
         "restored_variables": list(restored_variables), "vaoi_reward_scale": vaoi_reward_scale,
         "actor_learning_rate": actor_learning_rate, "critic_learning_rate": critic_learning_rate,
@@ -894,6 +945,12 @@ def train_ctde(config_path: str):
         "checkpoint_mode": checkpoint_mode, "validation_every_episodes": validation_every,
         "checkpoint_every_episodes": checkpoint_every, "best_train_mean_VAoI": best_train_vaoi,
         "best_validation_mean_VAoI": best_nn_vaoi,
+        "best_validation_checkpoint": best_validation_checkpoint,
+        "validation_bmax": validation_bmax,
+        "best_validation_Bmax_mean_VAoI": (
+            best_bmax_nn_vaoi if np.isfinite(best_bmax_nn_vaoi) else None
+        ),
+        "best_validation_Bmax_checkpoint": best_validation_bmax_checkpoint,
         "per_node_cap_multiplier": float(constraints.get("per_node_cap_multiplier", 1.5)),
     }
     with (output_directory / "model_metadata.json").open("w", encoding="utf-8") as stream:

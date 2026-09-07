@@ -1,0 +1,47 @@
+{
+  "checkpoint_episodes": {
+    "cross_n_v3_3": 990,
+    "single_n_v3_3": 490
+  },
+  "comparison": "cross_n_minus_single_n for the neural policy",
+  "density_scaling": "copied unchanged from 0806ScalabilityV3.2_N",
+  "evaluation": "V3.3 single-N versus cross-N MPNN on the existing 0806ScalabilityV3.2_N scenarios",
+  "evaluation_master_seed": 20260804,
+  "include_matched_random": false,
+  "model_dirs": {
+    "cross_n_v3_3": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_cross\\mpnnV3.3_Bpen_ch1_cross_n80_120\\mpnnV3.3_Bpen_ch1_cross_n80_120",
+    "single_n_v3_3": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\mpnnV3.3_Bpen_ch1_n100_u0.20_Bmax0.10_stage1_reused"
+  },
+  "node_counts": [
+    50,
+    60,
+    70,
+    80,
+    90,
+    100,
+    110,
+    120,
+    130,
+    140,
+    150
+  ],
+  "output_root": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_cross\\mpnnV3.3_Bpen_ch1_cross_n80_120\\0811ScalabilityV3.3_N",
+  "plots": {
+    "community": [
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_cross\\mpnnV3.3_Bpen_ch1_cross_n80_120\\0811ScalabilityV3.3_N\\scalability_community.png",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_cross\\mpnnV3.3_Bpen_ch1_cross_n80_120\\0811ScalabilityV3.3_N\\scalability_community.pdf"
+    ],
+    "random": [
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_cross\\mpnnV3.3_Bpen_ch1_cross_n80_120\\0811ScalabilityV3.3_N\\scalability_random.png",
+      "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_cross\\mpnnV3.3_Bpen_ch1_cross_n80_120\\0811ScalabilityV3.3_N\\scalability_random.pdf"
+    ]
+  },
+  "scenarios_per_node_count": 5,
+  "slots_per_scenario": 200,
+  "source_config_root": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0806ScalabilityV3.2_N",
+  "summary_note": "summary CSVs include mean_action_probability for each model and policy",
+  "topologies": [
+    "community",
+    "random"
+  ]
+}

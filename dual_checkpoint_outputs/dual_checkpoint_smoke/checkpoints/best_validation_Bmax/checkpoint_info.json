@@ -1,0 +1,11 @@
+{
+  "actor": {
+    "curvature": {
+      "base_tx_ratio": 0.1
+    }
+  },
+  "checkpoint": "D:\\ZMF\\2026Curvature\\dual_checkpoint_outputs\\dual_checkpoint_smoke\\checkpoints\\best_validation_Bmax\\model",
+  "config": "../../training_config.yaml",
+  "episode": 0,
+  "source_config": ".pytest_codex_tmp\\dual_checkpoint_smoke.yaml"
+}

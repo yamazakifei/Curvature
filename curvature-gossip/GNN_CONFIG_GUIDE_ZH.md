@@ -574,6 +574,7 @@ training:
 actor_learning_rate: 0.0001
 critic_learning_rate: 0.0003
 common_mode_coefficient: 0.05
+probability_budget_coefficient: 1.0
 clip_ratio: 0.2
 entropy_coefficient: 0.0
 gamma: 0.99
@@ -584,6 +585,9 @@ vaoi_reward_scale: 0.1
 
 - `actor_learning_rate/critic_learning_rate`：独立学习率；
 - `common_mode_coefficient`：惩罚同一时隙 residual 均值偏离 0；
+- `probability_budget_coefficient`：Stage-2 才启用的全网平均概率单侧 Bmax 惩罚
+  `lambda * relu((mean_probability - Bmax) / Bmax)^2`；默认 0 表示保持旧行为，
+  不改变 Stage-1 搜索；
 - `clip_ratio`：PPO clipping；
 - `entropy_coefficient`：Bernoulli entropy 权重；当前 q<0.5 时正 entropy 会推动概率上升，当前实验建议 0；
 - `gamma`：回报折扣；
