@@ -190,6 +190,14 @@ training:
   gae_lambda: 0.95
   ppo_epochs: 4
   vaoi_reward_scale: 0.1
+
+  # Detailed Stage-2/MPNN diagnostics are optional because they add extra
+  # TensorFlow inference calls during the rollout.
+  diagnostics:
+    enabled: false
+    every_episodes: 20
+    include_mpnn_messages: false
+
   use_budget_advantage: true
   update_multiplier: true
   initial_multiplier: 0.0
@@ -206,6 +214,8 @@ validation:
   trigger: every_episodes
   every_episodes: 10
   checkpoint_mode: validation_best_only
+  # Restore baseline comparisons for final evaluation by setting this true.
+  evaluate_baselines: false
   scenario_generation:
     mode: auto
     scenario_count: 25

@@ -1,0 +1,53 @@
+{
+  "annotation_fontsize": 10.5,
+  "checkpoint_episodes": {
+    "v33_curv_bmax20": 480,
+    "v33_no_curvature": 160,
+    "v33_random_trained": 300
+  },
+  "evaluation": "Five-model community N-generalization using the unchanged 0806ScalabilityV3.2_N scenarios",
+  "evaluation_master_seed": 20260804,
+  "line_order": [
+    "v32_curvature",
+    "v32_no_curvature",
+    "v33_curv_bmax20",
+    "v33_random_trained",
+    "v33_no_curvature"
+  ],
+  "mean_broadcast_probability": "summary mean of per-scenario action_prob_mean",
+  "models": {
+    "v32_curvature": "reused from the existing four-model summary",
+    "v32_no_curvature": "reused from the existing four-model summary",
+    "v33_curv_bmax20": "reused from the existing four-model summary",
+    "v33_no_curvature": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\mpnnV3.3_Bpen_ch1_NoCurv_n100_u0.20",
+    "v33_random_trained": "reused from the existing four-model summary; relabeled as requested"
+  },
+  "node_counts": [
+    50,
+    60,
+    70,
+    80,
+    90,
+    100,
+    110,
+    120,
+    130,
+    140,
+    150
+  ],
+  "output_root": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0908ScalabilityV3.3_community_four_models",
+  "plots": [
+    "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0908ScalabilityV3.3_community_four_models\\scalability_community_four_models.png",
+    "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0908ScalabilityV3.3_community_four_models\\scalability_community_four_models.pdf"
+  ],
+  "subset_plots": [
+    "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0908ScalabilityV3.3_community_four_models\\scalability_v33_bmax20_nocurvature.png",
+    "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0908ScalabilityV3.3_community_four_models\\scalability_v33_bmax20_nocurvature.pdf"
+  ],
+  "reference_v32_summary": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0806ScalabilityV3.2_N\\scalability_summary.csv",
+  "scenario_policy": "copied unchanged from 0806ScalabilityV3.2_N",
+  "scenarios_per_node_count": 5,
+  "slots_per_scenario": 200,
+  "source_scenario_root": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0806ScalabilityV3.2_N",
+  "topology": "community only"
+}

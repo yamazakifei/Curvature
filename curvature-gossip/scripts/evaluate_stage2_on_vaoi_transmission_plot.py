@@ -115,6 +115,9 @@ def evaluate_seed(model, sweep_raw, model_raw, topology_seed, channel_seed, upda
                 *encoder_args,
                 use_curvature_edge_feature=bool(residual.get("mpnn", {}).get("use_curvature_edge_feature", False)),
                 bmax=float(residual.get("mpnn", {}).get("bmax", 1.0)),
+                edge_normalization=str(residual.get("mpnn", {}).get("edge_normalization", "raw_bmax")),
+                edge_freshness_feature=str(residual.get("mpnn", {}).get("edge_freshness_feature", "binary_fraction")),
+                version_gap_tau=residual.get("mpnn", {}).get("version_gap_tau"),
                 use_curvature=use_curvature,
             )
         else:

@@ -4,8 +4,8 @@
 # python scripts/train_nn_ctde.py --config configs/GNN/mpnnV3.3_ch1_Bpen_search.yaml
 
 experiment:
-  id: mpnnV3.3_Bpen_ch1_n100_u0.20_Bmax0.10_stage1_reused
-  description: "0807 V3.3：Actor loss添加Bmax惩罚项；Stage-1搜索结果复用V3.2。"
+  id: mpnnV3.3_Bpen_ch1_n100_u0.20_curvBmax20_stage1_reused
+  description: "V3.3 single-N comparison: MPNN curvature edge-feature bmax=20; Stage-1 values reused from the Bmax=1 reference run. Compared model: mpnnV3.3_Bpen_ch1_n100_u0.20_Bmax0.10_stage1_reused"
   master_seed: 20260723
   slots: &full_evaluation_slots 500
 
@@ -72,9 +72,10 @@ actor:
     # 搜索关闭时的直接配置，也是兼容回退值。
     alpha_init: 1.5
     # Reused from the soft_two_community V3.2 Stage-1 result; no random-geometric parameters.
-    alpha_override: 1.5
-    base_tx_ratio: 0.09687500000000002
-    calibrated_intercept: -2.87408447265625
+    # Match the persisted Stage-1 values in the Bmax=1 reference result.
+    alpha_override: 1.0
+    base_tx_ratio: 0.096875
+    calibrated_intercept: -2.6624755859375
 
     base_search:
       schema_version: v3_2
@@ -163,7 +164,10 @@ actor:
       condition_message_on_receiver: true
       use_sender_node_features: false
       use_curvature_edge_feature: true
-      bmax: 1.0
+      # Normalize the raw negative-AF3 edge bottleneck score over [0, 20].
+      bmax: 20.0
+      # Keep the V3.3 Stage-2 edge encoding as raw curvature divided by bmax.
+      edge_normalization: raw_bmax
 
 critic:
   architecture: node_conditioned
@@ -194,13 +198,20 @@ training:
   critic_learning_rate: 0.0003
   common_mode_coefficient: 0.05
   # Penalize only the per-rollout whole-network mean probability above Bmax.
-  probability_budget_coefficient: 0.8
+  probability_budget_coefficient: 0.8   # set actor loss penalty for broadcast probability above Bmax
   clip_ratio: 0.2
   entropy_coefficient: 0.0
   gamma: 0.99
   gae_lambda: 0.95
   ppo_epochs: 4
   vaoi_reward_scale: 0.1
+
+  # Detailed Stage-2/MPNN diagnostics are optional because they add extra
+  # TensorFlow inference calls during the rollout.
+  diagnostics:
+    enabled: false
+    every_episodes: 20
+    include_mpnn_messages: false
 
   use_budget_advantage: true
   update_multiplier: true
@@ -219,6 +230,9 @@ validation:
   trigger: every_episodes
   every_episodes: 10
   checkpoint_mode: validation_best_only
+  # Training-time validation selects checkpoints from NN VAoI and its mean
+  # broadcast probability; baselines are restored for final evaluation.
+  evaluate_baselines: false   # 验证时是否测试其他baseline
 
   scenario_generation:
     mode: auto

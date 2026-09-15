@@ -1,0 +1,16 @@
+{
+  "actual_tx_ratio": 0.0997835,
+  "coarse_candidate_count": 7,
+  "constraint_status": "feasible",
+  "full_candidate_count": 5,
+  "mean_VAoI": 8.156226727272728,
+  "mean_tail_VAoI": 21.01579949494949,
+  "schema_version": "v3_2",
+  "search_probability_mean": 0.0999990522962828,
+  "selected_alpha": 0.0,
+  "selected_base_tx_ratio": 0.1,
+  "selected_center": 0.0,
+  "selected_center_mode": "none",
+  "selected_intercept": -2.197235107421875,
+  "selection_metric": "mean_VAoI"
+}

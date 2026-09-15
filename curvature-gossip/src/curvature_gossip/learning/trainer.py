@@ -7,6 +7,7 @@ complete rollout.
 
 import csv
 import json
+import shutil
 from pathlib import Path
 from typing import Mapping
 
@@ -28,8 +29,8 @@ from .features import (
     encode_curvature_score, encode_global_state, encode_observations,
     encode_stage1_observations, encode_stage2_observations, encode_stage2_mpnn_observations,
     encode_node_critic_inputs, node_critic_feature_names,
-    stage2_context_feature_names, STAGE2_MPNN_NODE_FEATURE_NAMES, STAGE2_MPNN_EDGE_FEATURE_NAMES,
-    STAGE2_MPNN_NO_CURVATURE_EDGE_FEATURE_NAMES,
+    stage2_context_feature_names, STAGE2_MPNN_NODE_FEATURE_NAMES,
+    stage2_mpnn_edge_feature_names,
 )
 from .validation import evaluate_fixed_validation, probability_statistics, validation_scenarios
 
@@ -194,6 +195,18 @@ def _write_history(output_directory: Path, history) -> None:
         json.dump(_json_safe(history), stream, indent=2, sort_keys=True)
 
 
+def _copy_source_config(config_path: str, output_directory: Path) -> Path:
+    """Copy the exact input YAML into the result directory for reproducibility."""
+    source = Path(config_path).expanduser().resolve()
+    if not source.is_file():
+        raise FileNotFoundError("Training config does not exist: {}".format(source))
+    destination = output_directory / "source_config.yaml"
+    # Keep the original YAML, including comments and anchors, alongside the model.
+    if source != destination.resolve():
+        shutil.copy2(str(source), str(destination))
+    return destination
+
+
 def _write_csv_history(path: Path, rows) -> None:
     """Persist a validation CSV with stable columns after every fixed-set evaluation."""
     if not rows:
@@ -288,36 +301,86 @@ def _stage1_actor_config(raw: Mapping) -> Mapping:
         mpnn = dict(residual.get("mpnn", {}))
         required = {
             "message_hidden_dims": [32], "message_dim": 16, "update_hidden_dims": [64, 64],
-            "aggregation": "mean_max", "condition_message_on_receiver": True,
+            "condition_message_on_receiver": True,
             "use_sender_node_features": False,
         }
         for key, expected in required.items():
             if mpnn.get(key, expected) != expected:
                 raise ValueError("Stage 2 MPNN requires mpnn.{}={!r}".format(key, expected))
+        aggregation = str(mpnn.get("aggregation", "mean_max"))
+        if aggregation not in {"mean_max", "curvature_attention_max"}:
+            raise ValueError(
+                "Stage 2 MPNN aggregation must be mean_max or curvature_attention_max"
+            )
         use_curvature_edge_feature = bool(mpnn.get("use_curvature_edge_feature", False))
         if not use_stage1_reference and use_curvature_edge_feature:
             raise ValueError("no-curvature Stage 2 MPNN must disable use_curvature_edge_feature")
+        if aggregation == "curvature_attention_max" and not use_curvature_edge_feature:
+            raise ValueError(
+                "curvature_attention_max requires use_curvature_edge_feature=true"
+            )
         bmax = float(mpnn.get("bmax", 1.0))
         if not np.isfinite(bmax) or bmax <= 0.0:
             raise ValueError("Stage 2 MPNN requires mpnn.bmax to be finite and positive")
+        attention_temperature = float(mpnn.get("attention_temperature", 0.5))
+        if not np.isfinite(attention_temperature) or attention_temperature <= 0.0:
+            raise ValueError("Stage 2 MPNN attention_temperature must be finite and positive")
+        attention_uniform_mix = float(mpnn.get("attention_uniform_mix", 0.0))
+        if not np.isfinite(attention_uniform_mix) or not 0.0 <= attention_uniform_mix <= 1.0:
+            raise ValueError("Stage 2 MPNN attention_uniform_mix must be in [0, 1]")
+        edge_normalization = str(mpnn.get("edge_normalization", "raw_bmax"))
+        if edge_normalization not in {"raw_bmax", "local_degree_bound"}:
+            raise ValueError("unknown Stage 2 MPNN edge normalization: {}".format(edge_normalization))
+        edge_freshness_feature = str(mpnn.get("edge_freshness_feature", "binary_fraction"))
+        if edge_freshness_feature not in {
+            "binary_fraction", "normalized_version_gap", "normalized_version_gap_with_gain",
+        }:
+            raise ValueError(
+                "unknown Stage 2 MPNN edge freshness feature: {}".format(edge_freshness_feature)
+            )
+        version_gap_tau = mpnn.get("version_gap_tau")
+        if version_gap_tau is not None:
+            version_gap_tau = float(version_gap_tau)
+            if not np.isfinite(version_gap_tau) or version_gap_tau <= 0.0:
+                raise ValueError("Stage 2 MPNN version_gap_tau must be finite and positive")
         residual["mpnn"] = dict(
-            required, use_curvature_edge_feature=use_curvature_edge_feature, bmax=bmax,
+            required, aggregation=aggregation,
+            use_curvature_edge_feature=use_curvature_edge_feature,
+            attention_temperature=attention_temperature,
+            attention_uniform_mix=attention_uniform_mix,
+            bmax=bmax, edge_normalization=edge_normalization,
+            edge_freshness_feature=edge_freshness_feature, version_gap_tau=version_gap_tau,
         )
         node_features = list(STAGE2_MPNN_NODE_FEATURE_NAMES)
         if bool(residual.get("include_scenario_context", False)):
             node_features += ["log_network_size", "update_probability", "target_tx_ratio"]
+        edge_feature_names = list(
+            stage2_mpnn_edge_feature_names(use_curvature_edge_feature, edge_freshness_feature)
+        )
+        architecture_version = (
+            "curvature_stage2_mpnn_v3_5_edge_gain"
+            if (use_stage1_reference and aggregation == "curvature_attention_max"
+                and edge_freshness_feature == "normalized_version_gap_with_gain")
+            else "curvature_stage2_mpnn_v3_5"
+            if use_stage1_reference and aggregation == "curvature_attention_max"
+            else "curvature_stage2_mpnn_v1"
+            if use_stage1_reference
+            else "no_curvature_stage2_mpnn_v1"
+        )
         actor.update({
-            "architecture_version": "curvature_stage2_mpnn_v1" if use_stage1_reference else "no_curvature_stage2_mpnn_v1",
+            "architecture_version": architecture_version,
             "residual_architecture": "mpnn", "node_input_feature_names": node_features,
-            "edge_input_feature_names": list(
-                STAGE2_MPNN_EDGE_FEATURE_NAMES if use_curvature_edge_feature
-                else STAGE2_MPNN_NO_CURVATURE_EDGE_FEATURE_NAMES
-            ),
-            "node_input_dim": len(node_features), "edge_input_dim": 3, "message_input_dim": len(node_features) + 3,
-            "message_dim": 16, "aggregation": "mean_max", "aggregated_message_dim": 32,
+            "edge_input_feature_names": edge_feature_names,
+            "node_input_dim": len(node_features), "edge_input_dim": len(edge_feature_names),
+            "message_input_dim": len(node_features) + len(edge_feature_names),
+            "message_dim": 16, "aggregation": aggregation, "aggregated_message_dim": 32,
             "decoder_input_dim": len(node_features) + 32 + (1 if use_stage1_reference else 0),
             "condition_message_on_receiver": True, "use_sender_node_features": False,
             "use_curvature_edge_feature": use_curvature_edge_feature, "bmax": bmax,
+            "attention_temperature": attention_temperature,
+            "attention_uniform_mix": attention_uniform_mix,
+            "edge_normalization": edge_normalization,
+            "edge_freshness_feature": edge_freshness_feature, "version_gap_tau": version_gap_tau,
             "input_feature_names": node_features,
             "curvature_enabled": curvature_enabled,
         })
@@ -414,6 +477,7 @@ def train_ctde(config_path: str):
     output_root = Path(raw.get("output", {}).get("root", "result_NN"))
     output_directory = output_root / str(raw["experiment"].get("id", "nn_ctde_v3"))
     output_directory.mkdir(parents=True, exist_ok=True)
+    _copy_source_config(config_path, output_directory)
 
     # Resolve all automatic pools before model creation and persist the exact plan.
     seed_manifest = build_seed_manifest(raw)
@@ -469,6 +533,9 @@ def train_ctde(config_path: str):
     update_multiplier = bool(training.get("update_multiplier", True))
     validation_config = raw.get("validation", {})
     validation_enabled = bool(validation_config.get("enabled", False))
+    # Training validation can skip expensive baseline rollouts while still
+    # computing NN VAoI and mean broadcast probability for checkpoint choice.
+    validation_evaluate_baselines = bool(validation_config.get("evaluate_baselines", True))
     validation_trigger = str(validation_config.get("trigger", "every_episodes"))
     checkpoint_mode = str(validation_config.get("checkpoint_mode", "periodic_and_latest"))
     validation_every = int(validation_config.get("every_episodes", 10))
@@ -581,7 +648,11 @@ def train_ctde(config_path: str):
                 model, output_directory, "best_validation_Bmax", checkpoint_episode,
                 config_path, actor_config,
             )
-        if checkpoint_mode == "periodic_and_latest" and summary_row["delta_vaoi_matched_mean"] < best_matched_delta:
+        if (
+                validation_evaluate_baselines
+                and checkpoint_mode == "periodic_and_latest"
+                and summary_row["delta_vaoi_matched_mean"] < best_matched_delta
+        ):
             best_matched_delta = summary_row["delta_vaoi_matched_mean"]
             _save_checkpoint(
                 model, output_directory, "best_matched", checkpoint_episode, config_path, actor_config
@@ -603,10 +674,29 @@ def train_ctde(config_path: str):
             multiplier_used = constraint_state[case_key]["multiplier"]
             encoded_steps, actions_steps, probability_steps, old_log_steps = [], [], [], []
             base_probability_steps, residual_delta_steps = [], []
+            mpnn_edge_message_steps, mpnn_aggregated_message_steps = [], []
+            mpnn_attention_entropy_steps, mpnn_attention_degree_steps = [], []
+            mpnn_attention_max_weight_steps = []
             value_steps, critic_inputs_steps, global_states = [], [], []
             vaoi_rewards, costs, vaoi_values = [], [], []
             bootstrap_values = None
             last_tx_ratio = 0.0
+            diagnostics_config = training.get("diagnostics", {})
+            diagnostics_enabled = bool(diagnostics_config.get("enabled", False))
+            diagnostics_every = int(diagnostics_config.get("every_episodes", 20))
+            diagnostics_include_mpnn_messages = bool(
+                diagnostics_config.get("include_mpnn_messages", False)
+            )
+            diagnostics_include_mpnn_attention = bool(
+                diagnostics_config.get("include_mpnn_attention", False)
+            )
+            if diagnostics_every < 1:
+                raise ValueError("training.diagnostics.every_episodes must be positive")
+            collect_stage2_diagnostics = (
+                diagnostics_enabled
+                and ((episode + 1) % diagnostics_every == 0 or episode == 0)
+            )
+            stage2_last_diagnostics = None
             for slot in range(simulator.parameters.slots):
                 observations = simulator.begin_step(slot)
                 if model.actor_stage == 1:
@@ -622,6 +712,9 @@ def train_ctde(config_path: str):
                             include_scenario_context,
                             use_curvature_edge_feature=bool(residual.get("mpnn", {}).get("use_curvature_edge_feature", False)),
                             bmax=float(residual.get("mpnn", {}).get("bmax", 1.0)),
+                            edge_normalization=str(residual.get("mpnn", {}).get("edge_normalization", "raw_bmax")),
+                            edge_freshness_feature=str(residual.get("mpnn", {}).get("edge_freshness_feature", "binary_fraction")),
+                            version_gap_tau=residual.get("mpnn", {}).get("version_gap_tau"),
                             use_curvature=model.actor_curvature_enabled,
                         )
                     else:
@@ -656,27 +749,56 @@ def train_ctde(config_path: str):
                         neighbor_confidence_time_constant=confidence_time_constant,
                         congestion_feature_scale=congestion_feature_scale,
                     )
-                    value = model.value(encoded_critic.critic_inputs).astype(np.float32)
                     critic_inputs_steps.append(encoded_critic.critic_inputs)
                 else:
-                    value = float(model.value(global_state)[0])
                     critic_inputs_steps.append(global_state)
                 actions, probabilities, old_log_probabilities = model.act(encoded, action_rng)
-                if model.actor_stage == 2:
-                    components = model.stage2_diagnostics(encoded)
+                if model.actor_stage == 2 and collect_stage2_diagnostics:
+                    components = model.stage2_diagnostics(
+                        encoded,
+                        include_mpnn_messages=diagnostics_include_mpnn_messages,
+                        include_mpnn_attention=diagnostics_include_mpnn_attention,
+                    )
+                    stage2_last_diagnostics = components
                     base_probability_steps.append(components["q_base"].astype(np.float32))
                     residual_delta_steps.append(components["delta"].astype(np.float32))
+                    if model.residual_architecture == "mpnn" and diagnostics_include_mpnn_messages:
+                        mpnn_edge_message_steps.append(components["edge_messages"].astype(np.float32))
+                        mpnn_aggregated_message_steps.append(components["aggregated_messages"].astype(np.float32))
+                    if model.residual_architecture == "mpnn" and diagnostics_include_mpnn_attention:
+                        mpnn_attention_entropy_steps.append(
+                            components["attention_entropy"].astype(np.float32)
+                        )
+                        mpnn_attention_degree_steps.append(
+                            components["attention_effective_degree"].astype(np.float32)
+                        )
+                        mpnn_attention_max_weight_steps.append(
+                            components["attention_max_weight"].astype(np.float32)
+                        )
                 outcome = simulator.complete_step(actions.astype(bool))
                 encoded_steps.append(encoded)
                 actions_steps.append(actions)
                 probability_steps.append(probabilities.astype(np.float32))
                 old_log_steps.append(old_log_probabilities)
-                value_steps.append(value)
                 global_states.append(global_state)
                 vaoi_rewards.append(vaoi_reward_scale * outcome.reward)
                 costs.append(outcome.transmission_cost)
                 vaoi_values.append(outcome.mean_vaoi)
                 last_tx_ratio = outcome.transmission_cost
+
+            # Critic values are not needed to choose actions.  Predict all
+            # rollout values in one TensorFlow call after the environment
+            # rollout, then keep the rollout-end bootstrap call separate.
+            if model.critic_architecture == "node_conditioned":
+                critic_inputs_batch = np.concatenate(critic_inputs_steps).astype(np.float32)
+                critic_value_batch = model.value(critic_inputs_batch).astype(np.float32)
+                node_count = int(critic_inputs_steps[0].shape[0])
+                value_matrix = critic_value_batch.reshape(len(critic_inputs_steps), node_count)
+                value_steps = [row for row in value_matrix]
+            else:
+                critic_global_batch = np.asarray(global_states, dtype=np.float32)
+                critic_value_batch = model.value(critic_global_batch).astype(np.float32)
+                value_steps = critic_value_batch.reshape(-1).tolist()
 
             if model.critic_architecture == "node_conditioned":
                 # Build the next decision state after the final transition for bootstrap only.
@@ -818,44 +940,61 @@ def train_ctde(config_path: str):
                     "alpha_kappa": float(diagnostics["alpha_kappa"]),
                     "q_base_mean": float(np.mean(q_base)), "q_base_std": float(np.std(q_base)),
                     "q_base_min": float(np.min(q_base)), "q_base_max": float(np.max(q_base)),
-                    "corr_s_kappa_q_base": float(np.corrcoef(scores, q_base)[0, 1]) if np.std(scores) > 0.0 else 0.0,
+                    "corr_s_kappa_q_base": (
+                        float(np.corrcoef(scores, q_base)[0, 1])
+                        if q_base.size == scores.size and np.std(scores) > 0.0 and np.std(q_base) > 0.0
+                        else 0.0
+                    ),
                 })
             elif model.actor_stage == 2:
-                diagnostics = model.stage2_diagnostics(encoded_steps[-1])
                 scores = np.concatenate([item.curvature_scores[:, 0] for item in encoded_steps])
-                q_base = np.concatenate(base_probability_steps)
-                delta = np.concatenate(residual_delta_steps)
+                diagnostics = stage2_last_diagnostics
+                q_base = np.concatenate(base_probability_steps) if base_probability_steps else np.empty((0,), dtype=np.float32)
+                delta = np.concatenate(residual_delta_steps) if residual_delta_steps else np.empty((0,), dtype=np.float32)
                 delta_matrix = np.asarray(residual_delta_steps, dtype=np.float32)
-                step_residual_means = np.mean(delta_matrix, axis=1)
                 delta_max = float(actor_config["residual"].get("delta_max", 1.0))
                 row.update({
                     "actor_architecture_version": actor_config["architecture_version"],
                     "use_stage1_reference": bool(actor_config["residual"].get("use_stage1_reference", True)),
-                    "alpha_raw": float(diagnostics["alpha_raw"]),
-                    "alpha_kappa": float(diagnostics["alpha_kappa"]),
-                    "effective_alpha": float(diagnostics["effective_alpha"]),
-                    "residual_input_dim": int(diagnostics["residual_input"].shape[1]),
+                    "alpha_raw": float(diagnostics["alpha_raw"]) if diagnostics is not None else None,
+                    "alpha_kappa": float(diagnostics["alpha_kappa"]) if diagnostics is not None else None,
+                    "effective_alpha": float(diagnostics["effective_alpha"]) if diagnostics is not None else None,
+                    "residual_input_dim": int(diagnostics["residual_input"].shape[1]) if diagnostics is not None else None,
                     "residual_input_feature_names": "|".join(actor_config["input_feature_names"]),
-                    "q_base_mean": float(np.mean(q_base)), "q_base_std": float(np.std(q_base)),
-                    "q_base_min": float(np.min(q_base)), "q_base_max": float(np.max(q_base)),
-                    "residual_delta_mean": float(np.mean(delta)), "residual_delta_std": float(np.std(delta)),
-                    "residual_delta_min": float(np.min(delta)), "residual_delta_max": float(np.max(delta)),
-                    "residual_mean_global": float(np.mean(delta)),
-                    "residual_std_global": float(np.std(delta)),
-                    "residual_mean_per_step_abs_mean": float(np.mean(np.abs(step_residual_means))),
-                    "residual_mean_per_step_abs_max": float(np.max(np.abs(step_residual_means))),
-                    "residual_positive_fraction": float(np.mean(delta > 0.0)),
-                    "residual_negative_fraction": float(np.mean(delta < 0.0)),
-                    "residual_saturation_fraction": float(np.mean(np.abs(delta) >= 0.95 * delta_max)),
+                    "q_base_mean": float(np.mean(q_base)) if q_base.size else None,
+                    "q_base_std": float(np.std(q_base)) if q_base.size else None,
+                    "q_base_min": float(np.min(q_base)) if q_base.size else None,
+                    "q_base_max": float(np.max(q_base)) if q_base.size else None,
+                    "residual_delta_mean": float(np.mean(delta)) if delta.size else None,
+                    "residual_delta_std": float(np.std(delta)) if delta.size else None,
+                    "residual_delta_min": float(np.min(delta)) if delta.size else None,
+                    "residual_delta_max": float(np.max(delta)) if delta.size else None,
+                    "residual_mean_global": float(np.mean(delta)) if delta.size else None,
+                    "residual_std_global": float(np.std(delta)) if delta.size else None,
+                    "residual_mean_per_step_abs_mean": float(np.mean(np.abs(np.mean(delta_matrix, axis=1)))) if delta_matrix.size else None,
+                    "residual_mean_per_step_abs_max": float(np.max(np.abs(np.mean(delta_matrix, axis=1)))) if delta_matrix.size else None,
+                    "residual_positive_fraction": float(np.mean(delta > 0.0)) if delta.size else None,
+                    "residual_negative_fraction": float(np.mean(delta < 0.0)) if delta.size else None,
+                    "residual_saturation_fraction": float(np.mean(np.abs(delta) >= 0.95 * delta_max)) if delta.size else None,
                     "q_final_mean": float(np.mean(probability_steps)),
                     "q_final_std": float(np.std(probability_steps)),
-                    "corr_s_kappa_q_base": float(np.corrcoef(scores, q_base)[0, 1]) if np.std(scores) > 0.0 else 0.0,
+                    "corr_s_kappa_q_base": (
+                        float(np.corrcoef(scores, q_base)[0, 1])
+                        if q_base.size == scores.size and np.std(scores) > 0.0 and np.std(q_base) > 0.0
+                        else 0.0
+                    ),
                 })
                 if actor_config["residual"].get("architecture", "mlp") == "mpnn":
                     edge_features = np.concatenate([step.edge_features for step in encoded_steps], axis=0)
                     edge_count = int(edge_features.shape[0])
-                    message = np.concatenate([model.stage2_diagnostics(step)["edge_messages"] for step in encoded_steps], axis=0)
-                    aggregated = np.concatenate([model.stage2_diagnostics(step)["aggregated_messages"] for step in encoded_steps], axis=0)
+                    edge_feature_names = list(actor_config["edge_input_feature_names"])
+                    edge_feature_means = {
+                        name: float(np.mean(edge_features[:, index]))
+                        if edge_count else 0.0
+                        for index, name in enumerate(edge_feature_names)
+                    }
+                    message = np.concatenate(mpnn_edge_message_steps, axis=0) if mpnn_edge_message_steps else np.empty((0, int(actor_config["message_dim"])), dtype=np.float32)
+                    aggregated = np.concatenate(mpnn_aggregated_message_steps, axis=0) if mpnn_aggregated_message_steps else np.empty((0, int(actor_config["aggregated_message_dim"])), dtype=np.float32)
                     row.update({
                         "residual_architecture": "mpnn", "node_input_dim": actor_config["node_input_dim"],
                         "edge_input_dim": actor_config["edge_input_dim"], "message_dim": actor_config["message_dim"],
@@ -865,12 +1004,43 @@ def train_ctde(config_path: str):
                             "disabled_zero_placeholder"
                             if not actor_config.get("use_curvature_edge_feature", False) else "none"
                         ),
+                        "edge_freshness_feature": actor_config.get("edge_freshness_feature", "binary_fraction"),
+                        "version_gap_tau": actor_config.get("version_gap_tau"),
                         "mean_directed_degree": float(edge_count) / simulator.state.n_nodes,
-                        "mean_edge_freshness_gain": float(np.mean(edge_features[:, 0])) if edge_count else 0.0,
-                        "message_l2_mean": float(np.mean(np.linalg.norm(message, axis=1))) if edge_count else 0.0,
-                        "message_l2_std": float(np.std(np.linalg.norm(message, axis=1))) if edge_count else 0.0,
-                        "aggregated_message_l2_mean": float(np.mean(np.linalg.norm(aggregated, axis=1))),
-                        "aggregated_message_l2_std": float(np.std(np.linalg.norm(aggregated, axis=1))),
+                        # Keep the historical field while exposing both V3.5 freshness means explicitly.
+                        "mean_edge_freshness_feature": edge_feature_means[edge_feature_names[0]],
+                        "mean_neighbor_freshness_gain": edge_feature_means.get("neighbor_freshness_gain"),
+                        "mean_neighbor_version_gap_normalized": edge_feature_means.get("neighbor_version_gap_normalized"),
+                        "message_l2_mean": float(np.mean(np.linalg.norm(message, axis=1))) if message.size else None,
+                        "message_l2_std": float(np.std(np.linalg.norm(message, axis=1))) if message.size else None,
+                        "aggregated_message_l2_mean": float(np.mean(np.linalg.norm(aggregated, axis=1))) if aggregated.size else None,
+                        "aggregated_message_l2_std": float(np.std(np.linalg.norm(aggregated, axis=1))) if aggregated.size else None,
+                    })
+                    attention_entropy = (
+                        np.concatenate(mpnn_attention_entropy_steps, axis=0)
+                        if mpnn_attention_entropy_steps else np.empty((0,), dtype=np.float32)
+                    )
+                    attention_degree = (
+                        np.concatenate(mpnn_attention_degree_steps, axis=0)
+                        if mpnn_attention_degree_steps else np.empty((0,), dtype=np.float32)
+                    )
+                    attention_max_weight = (
+                        np.concatenate(mpnn_attention_max_weight_steps, axis=0)
+                        if mpnn_attention_max_weight_steps else np.empty((0,), dtype=np.float32)
+                    )
+                    row.update({
+                        "attention_temperature": actor_config.get("attention_temperature"),
+                        "attention_uniform_mix": actor_config.get("attention_uniform_mix"),
+                        "attention_entropy_mean": (
+                            float(np.mean(attention_entropy)) if attention_entropy.size else None
+                        ),
+                        "attention_effective_degree_mean": (
+                            float(np.mean(attention_degree)) if attention_degree.size else None
+                        ),
+                        "attention_max_weight_mean": (
+                            float(np.mean(attention_max_weight))
+                            if attention_max_weight.size else None
+                        ),
                     })
             row.update(probability_statistics(probability_steps))
             if not all(np.isfinite(value) for value in row.values() if isinstance(value, (float, np.floating))):
@@ -942,8 +1112,10 @@ def train_ctde(config_path: str):
         "budget_relative_tolerance": relative_tolerance, "multiplier_error_clip": multiplier_error_clip,
         "use_budget_advantage": use_budget_advantage, "update_multiplier": update_multiplier,
         "validation_enabled": validation_enabled, "validation_trigger": validation_trigger,
+        "validation_evaluate_baselines": validation_evaluate_baselines,
         "checkpoint_mode": checkpoint_mode, "validation_every_episodes": validation_every,
         "checkpoint_every_episodes": checkpoint_every, "best_train_mean_VAoI": best_train_vaoi,
+        "training_diagnostics": _json_safe(training.get("diagnostics", {})),
         "best_validation_mean_VAoI": best_nn_vaoi,
         "best_validation_checkpoint": best_validation_checkpoint,
         "validation_bmax": validation_bmax,

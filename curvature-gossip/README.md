@@ -194,6 +194,14 @@ The MPNN directed edge input is ordered as
 ablation. Otherwise it is computed as
 `min(max(-kappa_ij, 0), bmax) / bmax`, with `actor.residual.mpnn.bmax > 0`.
 
+The V3.5 configuration can use
+`edge_freshness_feature: normalized_version_gap_with_gain`. Its four-column
+edge input preserves the legacy `neighbor_freshness_gain` fraction and adds
+`neighbor_version_gap_normalized` before confidence and curvature:
+`[gain, version_gap, confidence, curvature]`. Existing
+`binary_fraction` and `normalized_version_gap` configurations keep their
+three-column schemas.
+
 ### Batch comparison of best checkpoints
 
 Use `scripts/compare_best_models.py` to compare any number of

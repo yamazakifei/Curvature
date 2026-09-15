@@ -1,0 +1,3 @@
+# V3.2/V3.3 community N-generalization
+
+This comparison reuses the community YAML scenarios from `0806ScalabilityV3.2_N` unchanged. It contains five neural curves: V3.2 curvature MPNN, V3.2 no-curvature MPNN, V3.3 single-N curvature-edge bmax=20, V3.3 single-N curvature-edge bmax=1, and the V3.3 single-N no-curvature model. The four existing curves are reused from the prior comparison artifacts; only the new no-curvature checkpoint is evaluated. Every plotted point is annotated with its mean Actor broadcast probability using the same font size as the legend. A separate two-curve plot containing only the V3.3 bmax=20 and no-curvature curves is saved as `scalability_v33_bmax20_nocurvature.png` and `scalability_v33_bmax20_nocurvature.pdf`.

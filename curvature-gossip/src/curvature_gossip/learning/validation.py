@@ -237,6 +237,9 @@ def _run_neural_scenario(
                     *encoder_args,
                     use_curvature_edge_feature=bool(residual.get("mpnn", {}).get("use_curvature_edge_feature", False)),
                     bmax=float(residual.get("mpnn", {}).get("bmax", 1.0)),
+                    edge_normalization=str(residual.get("mpnn", {}).get("edge_normalization", "raw_bmax")),
+                    edge_freshness_feature=str(residual.get("mpnn", {}).get("edge_freshness_feature", "binary_fraction")),
+                    version_gap_tau=residual.get("mpnn", {}).get("version_gap_tau"),
                     use_curvature=model.actor_curvature_enabled,
                 )
             else:
@@ -284,40 +287,48 @@ def _paired_mean_ci(values: Iterable[float]) -> Tuple[float, float, float]:
 
 
 def evaluate_fixed_validation(model, raw: Mapping, checkpoint_episode: int, checkpoint_label: str):
-    """Compare the frozen NN Actor to paired fixed- and matched-rate random baselines."""
+    """Evaluate the frozen NN Actor and optionally compare paired baselines.
+
+    ``validation.evaluate_baselines`` defaults to ``True`` for backwards
+    compatibility.  Training runs can set it to ``False`` to evaluate only
+    the NN while retaining its VAoI and mean broadcast-probability metrics.
+    """
+    evaluate_baselines = bool(raw.get("validation", {}).get("evaluate_baselines", True))
     before = model.variable_snapshot()
     scenario_rows: List[Dict[str, Any]] = []
     nn_probability_matrices = []
     deltas_matched, deltas_fixed = [], []
     for scenario in validation_scenarios(raw):
         nn_summary, nn_stats, nn_matrix = _run_neural_scenario(model, raw, scenario)
-        stage1_summary = stage1_stats = stage1_matrix = None
-        if model.actor_stage in (1, 2):
-            stage1_summary, stage1_stats, stage1_matrix = _run_neural_scenario(
-                # Reuse NN's Bernoulli stream so this is a genuinely paired action comparison.
-                model, raw, scenario, policy_name="nn", stage1_only=True
-            )
         matched_probability = float(np.mean(nn_matrix))
-        fixed_summary, fixed_stats = _run_random_scenario(
-            raw, scenario, "fixed_random", scenario.target_tx_ratio
-        )
-        matched_summary, matched_stats = _run_random_scenario(
-            raw, scenario, "matched_random", matched_probability
-        )
         nn_probability_matrices.append(nn_matrix)
-        delta_matched = float(nn_summary["mean_VAoI"] - matched_summary["mean_VAoI"])
-        delta_fixed = float(nn_summary["mean_VAoI"] - fixed_summary["mean_VAoI"])
-        deltas_matched.append(delta_matched)
-        deltas_fixed.append(delta_fixed)
+
         policies = [
             ("nn", nn_summary, nn_stats, matched_probability),
         ]
-        if stage1_summary is not None:
-            policies.append(("stage1_only", stage1_summary, stage1_stats, float(np.mean(stage1_matrix))))
-        policies.extend([
-            ("matched_random", matched_summary, matched_stats, matched_probability),
-            ("fixed_random", fixed_summary, fixed_stats, scenario.target_tx_ratio),
-        ])
+        if evaluate_baselines:
+            # Reuse the NN action stream for the Stage-1 paired comparison.
+            stage1_summary = stage1_stats = stage1_matrix = None
+            if model.actor_stage in (1, 2):
+                stage1_summary, stage1_stats, stage1_matrix = _run_neural_scenario(
+                    model, raw, scenario, policy_name="nn", stage1_only=True
+                )
+            fixed_summary, fixed_stats = _run_random_scenario(
+                raw, scenario, "fixed_random", scenario.target_tx_ratio
+            )
+            matched_summary, matched_stats = _run_random_scenario(
+                raw, scenario, "matched_random", matched_probability
+            )
+            delta_matched = float(nn_summary["mean_VAoI"] - matched_summary["mean_VAoI"])
+            delta_fixed = float(nn_summary["mean_VAoI"] - fixed_summary["mean_VAoI"])
+            deltas_matched.append(delta_matched)
+            deltas_fixed.append(delta_fixed)
+            if stage1_summary is not None:
+                policies.append(("stage1_only", stage1_summary, stage1_stats, float(np.mean(stage1_matrix))))
+            policies.extend([
+                ("matched_random", matched_summary, matched_stats, matched_probability),
+                ("fixed_random", fixed_summary, fixed_stats, scenario.target_tx_ratio),
+            ])
         for policy_name, summary, stats, reference_probability in policies:
             row = {
                 "checkpoint_episode": int(checkpoint_episode),
@@ -345,45 +356,37 @@ def evaluate_fixed_validation(model, raw: Mapping, checkpoint_episode: int, chec
     # Cross-N scenarios have different node widths; pool their matrices using
     # the cross-N-aware statistics helper instead of concatenating axis=1.
     nn_stats = probability_statistics(nn_probability_matrices)
-    matched_mean, matched_low, matched_high = _paired_mean_ci(deltas_matched)
-    fixed_mean, fixed_low, fixed_high = _paired_mean_ci(deltas_fixed)
     summary_row: Dict[str, Any] = {
         "checkpoint_episode": int(checkpoint_episode),
         "n_scenarios": len(nn_rows),
         "nn_mean_VAoI": float(np.mean([row["mean_VAoI"] for row in nn_rows])),
-    }
-    if stage1_rows:
-        summary_row.update({
-            "stage1_only_mean_VAoI": float(np.mean([row["mean_VAoI"] for row in stage1_rows])),
-        })
-    summary_row.update({
-        "matched_random_mean_VAoI": float(np.mean([row["mean_VAoI"] for row in matched_rows])),
-        "fixed_random_mean_VAoI": float(np.mean([row["mean_VAoI"] for row in fixed_rows])),
         "nn_mean_action_probability": float(np.mean([row["action_prob_mean"] for row in nn_rows])),
-    })
-    if stage1_rows:
-        summary_row.update({
-            "stage1_only_mean_action_probability": float(np.mean([row["action_prob_mean"] for row in stage1_rows])),
-        })
-    summary_row.update({
-        "matched_random_mean_action_probability": float(np.mean([row["action_prob_mean"] for row in matched_rows])),
-        "fixed_random_mean_action_probability": float(np.mean([row["action_prob_mean"] for row in fixed_rows])),
         "nn_actual_tx_ratio": float(np.mean([row["actual_tx_ratio"] for row in nn_rows])),
-    })
-    if stage1_rows:
+        "baseline_evaluation_enabled": bool(evaluate_baselines),
+    }
+    if evaluate_baselines:
+        matched_mean, matched_low, matched_high = _paired_mean_ci(deltas_matched)
+        fixed_mean, fixed_low, fixed_high = _paired_mean_ci(deltas_fixed)
+        if stage1_rows:
+            summary_row.update({
+                "stage1_only_mean_VAoI": float(np.mean([row["mean_VAoI"] for row in stage1_rows])),
+                "stage1_only_mean_action_probability": float(np.mean([row["action_prob_mean"] for row in stage1_rows])),
+                "stage1_only_actual_tx_ratio": float(np.mean([row["actual_tx_ratio"] for row in stage1_rows])),
+            })
         summary_row.update({
-            "stage1_only_actual_tx_ratio": float(np.mean([row["actual_tx_ratio"] for row in stage1_rows])),
+            "matched_random_mean_VAoI": float(np.mean([row["mean_VAoI"] for row in matched_rows])),
+            "fixed_random_mean_VAoI": float(np.mean([row["mean_VAoI"] for row in fixed_rows])),
+            "matched_random_mean_action_probability": float(np.mean([row["action_prob_mean"] for row in matched_rows])),
+            "fixed_random_mean_action_probability": float(np.mean([row["action_prob_mean"] for row in fixed_rows])),
+            "matched_random_actual_tx_ratio": float(np.mean([row["actual_tx_ratio"] for row in matched_rows])),
+            "fixed_random_actual_tx_ratio": float(np.mean([row["actual_tx_ratio"] for row in fixed_rows])),
+            "delta_vaoi_matched_mean": matched_mean,
+            "delta_vaoi_matched_ci95_low": matched_low,
+            "delta_vaoi_matched_ci95_high": matched_high,
+            "delta_vaoi_fixed_mean": fixed_mean,
+            "delta_vaoi_fixed_ci95_low": fixed_low,
+            "delta_vaoi_fixed_ci95_high": fixed_high,
+            "nn_beats_matched_fraction": float(np.mean(np.asarray(deltas_matched) < 0.0)),
         })
-    summary_row.update({
-        "matched_random_actual_tx_ratio": float(np.mean([row["actual_tx_ratio"] for row in matched_rows])),
-        "fixed_random_actual_tx_ratio": float(np.mean([row["actual_tx_ratio"] for row in fixed_rows])),
-        "delta_vaoi_matched_mean": matched_mean,
-        "delta_vaoi_matched_ci95_low": matched_low,
-        "delta_vaoi_matched_ci95_high": matched_high,
-        "delta_vaoi_fixed_mean": fixed_mean,
-        "delta_vaoi_fixed_ci95_low": fixed_low,
-        "delta_vaoi_fixed_ci95_high": fixed_high,
-        "nn_beats_matched_fraction": float(np.mean(np.asarray(deltas_matched) < 0.0)),
-    })
     summary_row.update(nn_stats)
     return summary_row, scenario_rows

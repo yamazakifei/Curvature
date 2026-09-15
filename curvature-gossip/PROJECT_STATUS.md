@@ -1,15 +1,177 @@
 # Project Status
 
-## V3.3 mean-probability Bmax regularization (2026-08-07)
+## V3.5 four-column edge attributes (2026-09-09)
+
+The V3.5 MPNN edge schema now keeps both freshness signals instead of
+replacing the legacy gain statistic with version-gap magnitude. With
+`edge_freshness_feature: normalized_version_gap_with_gain`, each directed edge
+uses the following four attributes:
+
+```text
+neighbor_freshness_gain
+neighbor_version_gap_normalized
+neighbor_estimate_confidence
+clipped_bottleneck_score
+```
+
+The legacy gain remains the normalized fraction of source entries for which
+the receiver cache is newer; the version-gap feature retains its bounded
+exponential normalization. The MPNN message input width is therefore 4 edge
+features plus the receiver context, while the weighted-mean and element-wise
+max branches are unchanged. Existing `binary_fraction` and
+`normalized_version_gap` configurations retain their previous three-column
+schemas. The simulator-side `num_improved_cache_entries`,
+`innovative_entries_per_tx`, and `total_version_improvement` metrics are
+unchanged.
+
+## V3.5 curvature-prior attention aggregation (2026-09-08)
+
+Added the `curvature_attention_max` Stage-2 MPNN aggregation mode to the V3.5
+configuration. The normalized `clipped_bottleneck_score` in the curvature edge
+feature column controls a stable per-receiver softmax weighted mean; the
+existing element-wise max pooling branch remains unchanged. The aggregation
+output remains 32-dimensional and the decoder dimensions are unchanged.
+
+The implementation supports `attention_temperature` and
+`attention_uniform_mix`. It records optional attention entropy, effective
+degree, and maximum-weight diagnostics when
+`training.diagnostics.include_mpnn_attention: true`. Training and validation
+continue to report mean VAoI, mean Actor broadcast probability, and actual
+transmission ratio. The V3.5 training result has not yet been generated.
+
+## Training acceleration path (2026-09-08)
+
+The CTDE training path now supports an NN-only fixed-validation mode through
+`validation.evaluate_baselines: false`. It still records NN mean VAoI, mean
+Actor broadcast probability, and actual transmission ratio for checkpoint
+selection. Baseline comparisons remain available by setting the option back
+to `true` for final evaluation.
+
+Stage-2 diagnostics are controlled by `training.diagnostics`. They are off by
+default in the current V3.3 Bpen training configurations because detailed MPNN
+diagnostics add TensorFlow inference calls. When enabled, diagnostics are
+sampled by episode interval and MPNN message statistics are independently
+optional.
+
+The rollout Critic is evaluated in one batch after each episode, while the
+rollout-end bootstrap value remains a separate inference. This preserves the
+PPO/GAE data and reduces per-slot Critic session calls.
+
+The same training-time settings are enabled in
+`configs/GNN/mpnnV3.3_ch1_Bpen_no_curvature.yaml` and
+`configs/GNN/mpnnV3.3_ch1_Bpen_cross_n80_120.yaml`, so both the strict
+no-curvature ablation and cross-N training use NN-only validation with the
+mean broadcast probability retained.
+
+## V3.3 Bpen strict no-curvature ablation configuration (2026-09-08)
+
+Added `configs/GNN/mpnnV3.3_ch1_Bpen_no_curvature.yaml`, derived from the
+current single-N V3.3 Bpen configuration. It keeps the same
+`soft_two_community` scenario, PPO settings, validation horizon, and
+`probability_budget_coefficient: 0.8`, while restricting SearchBase to
+`alpha_candidates: [0.0]` so the Stage-1 base probability is uniform.
+
+The ablation disconnects curvature at every model input: `actor.curvature.enabled`
+is false, `actor.curvature.alpha_override` is `0.0`,
+`residual.use_stage1_reference` is false,
+`residual.mpnn.use_curvature_edge_feature` is false, and
+`critic.include_curvature_features` is false. The simulator may still compute
+physical AF3 values to keep the environment paired, but Actor and Critic do
+not consume them. The MPNN `bmax` is set to `1.0` as an inactive positive
+schema value; with the curvature edge feature disabled, `bmax=1` and `bmax=20`
+produce the same no-curvature model. The actual broadcast budget remains
+`constraints.max_tx_ratio: 0.10`.
+
+## V3.2/V3.3 four-model community N-generalization (2026-09-08)
+
+Added `scripts/compare_v33_v32_community_generalization.py` to compare four
+neural curves on the unchanged community scenarios from
+`result_GNN/0806ScalabilityV3.2_N/`: V3.2 curvature MPNN, V3.2 no-curvature
+MPNN, `mpnnV3.3_Bpen_ch1_n100_u0.20_curvBmax20_stage1_reused`, and
+`mpnnV3.3_Bpen_random_n100_u0.20_Bmax0.10_stage1_reused`. The sweep covers
+N=50--150, five scenarios per N, and 200 slots per scenario. The V3.2 rows
+are reused from the persisted scalability CSV, while both V3.3 checkpoints
+are evaluated on the same community YAMLs. Every plotted point is annotated
+with mean Actor broadcast probability using the legend font size.
+
+Outputs are stored in
+`result_GNN/0908ScalabilityV3.3_community_four_models/`, including the
+combined `scalability_summary.csv`, per-scenario CSV, copied community YAMLs,
+PNG/PDF plot, metadata, and README. Averaged over the 11 N points, the mean
+VAoI / mean broadcast probability are: V3.2 curvature `5.4423 / 0.1087`,
+V3.2 no-curvature `5.6292 / 0.1289`, V3.3 single-N curvature bmax=20
+`6.0832 / 0.0981`, and V3.3 random-trained `6.2250 / 0.0973`. The V3.2
+curvature line is the lowest-VAoI curve at N=70--150; the V3.3 curves use
+less broadcast probability but have higher VAoI on this sweep.
+
+## V3.2/V3.3 five-model community N-generalization update (2026-09-08)
+
+Extended the comparison output with the V3.3 single-N no-curvature model from
+`result_GNN/mpnnV3.3_Bpen_ch1_NoCurv_n100_u0.20`. The four existing curves are
+reused from the persisted comparison CSVs and are not rerun; only the new
+checkpoint is evaluated on the unchanged community scenarios. The previous
+purple curve is labeled `V3.3 single-N MPNN (curv bmax=1)` as requested.
+The five plotted curves cover N=50--150, and each point retains the mean Actor
+broadcast probability annotation.
+
+A separate two-curve plot was also saved as
+`result_GNN/0908ScalabilityV3.3_community_four_models/scalability_v33_bmax20_nocurvature.png`
+and `.pdf`, containing only the V3.3 curvature bmax=20 and no-curvature lines.
+
+## V3.4 version-gap freshness and V3.3 curvature-edge encoding (2026-09-08)
+
+Updated `configs/GNN/mpnnV3.4_ch1_local_degree_bound.yaml` for the V3.4
+single-N=100 `soft_two_community` experiment. Stage-1 still uses
+`curvature.normalization: local_degree_bound`, but the Stage-2 curvature edge
+feature is restored to the V3.3 rule
+`min(max(-kappa, 0), bmax) / bmax` with `bmax=20.0`.
+
+Only the first column of the three-column MPNN edge tensor changes in V3.4.
+`edge_freshness_feature: normalized_version_gap` uses
+`mean(1-exp(-max(own_version-neighbor_estimate, 0)/tau))`, with
+`tau=max(1, update_probability * neighbor_confidence_time_constant)` when
+`version_gap_tau` is null. The edge width and MPNN message dimensions remain
+unchanged. The legacy `binary_fraction` mode remains the default so existing
+V3.3 configurations and checkpoints retain their original feature semantics.
+
+The new expected output directory is
+`result_GNN/mpnnV3.4_Bpen_ch1_n100_u0.20_versionGap_rawBmax_stage1_reused/`.
+The previous local-degree-bound Stage-2 edge encoding is retained only as the
+earlier V3.4 configuration history; it is no longer selected by the current
+V3.4 YAML.
+
+## V3.3 MPNN curvature-edge bmax=20 comparison (2026-09-07)
+
+Updated `configs/GNN/mpnnV3.3_ch1_Bpen_search.yaml` for a single-N comparison
+against `result_GNN/mpnnV3.3_Bpen_ch1_n100_u0.20_Bmax0.10_stage1_reused/`.
+The new run writes to
+`result_GNN/mpnnV3.3_Bpen_ch1_n100_u0.20_curvBmax20_stage1_reused/` and uses
+`actor.residual.mpnn.bmax: 20.0` instead of `1.0`. The Stage-1 values were
+aligned to the persisted reference result (`alpha=1.0`, `b=0.096875`,
+`beta0=-2.6624755859375`) so the comparison does not additionally mix in the
+current YAML's newer Stage-1 values. The broadcast-probability budget remains
+`constraints.max_tx_ratio: 0.10`; it is independent of the MPNN edge-feature
+`bmax`.
+
+The trainer now copies the exact input YAML, including comments and anchors,
+to each result directory as `source_config.yaml`.
+
+change Bmax=20 is better than using local_degree_bound:(curvature-gossip\result_GNN\mpnnV3.4_Bpen_ch1_n100_u0.20_local_degree_bound).
+
+## V3.3 mean-probability Bmax regularization reference run (2026-08-07)
 
 Added the Stage-2-only one-sided probability-space penalty
 `lambda * relu((mean_probability - Bmax) / Bmax)^2`, evaluated independently
-for each rollout step.  The new single-N retraining config is
+for each rollout step.  The original single-N retraining config was
 `configs/GNN/mpnnV3.3_ch1_Bpen_search.yaml`, with target output
 `result_GNN/mpnnV3.3_Bpen_ch1_n100_u0.20_Bmax0.10_stage1_reused/`.
-It uses the `soft_two_community` topology and reuses the selected V3.2
-community-topology Stage-1 values (`b=0.096875`, `alpha=1.5`,
-`beta0=-2.87408447265625`); it does not use the random-geometric result.
+It uses the `soft_two_community` topology and does not use the
+random-geometric result. Its persisted `training_config.yaml` records the
+Stage-1 values `b=0.096875`, `alpha=1.0`, and
+`beta0=-2.6624755859375`; the Bmax=20 comparison above reuses these values.
+Although its Stage-1 `curvature.normalization` is `local_degree_bound`, its
+Stage-2 MPNN edge feature remains `actor.residual.mpnn.edge_normalization: raw_bmax` with
+`bmax=1.0` in the persisted reference result.
 The Stage-2 penalty coefficient is `0.8` in the current training config.
 For cross-N retraining, use
 `configs/GNN/mpnnV3.3_ch1_Bpen_cross_n80_120.yaml`; it reuses the V3.2

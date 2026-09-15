@@ -249,8 +249,89 @@ AF3 当前推荐：
 - `local_degree_bound`。
 
 该归一化只依赖边两端局部度数，不需要全网负曲率最大值。
+V3.4 的当前对应配置为
+`configs/GNN/mpnnV3.4_ch1_local_degree_bound.yaml`。其中 Stage-1 使用
+`local_degree_bound`，Stage-2 曲率边特征保持 V3.3 的 `raw_bmax`。
+
+需要区分 Stage-1 的 `curvature.normalization` 与 Stage-2 MPNN 边特征的
+归一化。Stage-2 通过独立的 `actor.residual.mpnn.edge_normalization` 选择方式：
+
+```yaml
+curvature:
+  normalization: local_degree_bound       # Stage-1 节点瓶颈分数
+actor:
+  residual:
+    mpnn:
+      edge_normalization: raw_bmax             # V3.3/V3.4 Stage-2 曲率边特征
+      edge_freshness_feature: normalized_version_gap  # V3.4 第一列
+      version_gap_tau: null                    # 自动使用 max(1, u * T_conf)
+```
+
+若不设置 `edge_normalization`，Stage-2 默认保持旧的
+`raw_bmax`：`min(max(-kappa, 0), bmax) / bmax`。
+
+### V3.4 的 MPNN 第一列边特征
+
+V3.4 只替换 MPNN 边张量的第一列，仍保持三列输入和原有消息网络维度。
+`edge_freshness_feature: normalized_version_gap` 对有向边 `j -> i` 使用：
+
+```text
+mean(1 - exp(-max(own_version - neighbor_estimate, 0) / tau))
+```
+
+其中 `tau` 默认为 `max(1, update_probability * neighbor_confidence_time_constant)`。
+旧的 `binary_fraction` 模式仍是默认值，因此 V3.3 配置不改变。
 
 ---
+
+### V3.5 曲率 attention 聚合
+
+V3.5 对 Stage-2 MPNN 增加 `curvature_attention_max` 聚合方式。它使用
+三列边特征中的归一化 `clipped_bottleneck_score` 计算每个接收节点内部的
+softmax 权重，对 16 维边消息做加权 mean；逐维 `max` 分支保持不变，最终
+聚合维度仍为 32。
+
+```yaml
+actor:
+  residual:
+    mpnn:
+      aggregation: curvature_attention_max
+      attention_temperature: 0.5
+      attention_uniform_mix: 0.0
+```
+
+权重定义为：
+
+```text
+w_ij = softmax_j(clipped_bottleneck_score_ij / attention_temperature)
+```
+
+`attention_temperature` 必须为正，数值越小越强调高曲率边。
+`attention_uniform_mix` 在 `[0, 1]` 内，用于将曲率权重与入边均匀权重混合；
+设为 `0.0` 表示纯曲率 attention。该模式要求
+`use_curvature_edge_feature: true`，无曲率消融继续使用 `mean_max`。
+
+当前 V3.5 配置为
+`configs/GNN/mpnnV3.5_ch1_CurvAttn.yaml`。
+
+### V3.5 edge freshness schema
+
+The V3.5 configuration uses
+`edge_freshness_feature: normalized_version_gap_with_gain` to retain the
+legacy freshness-gain fraction and add the normalized version-gap magnitude.
+The directed edge attributes are ordered as
+
+```text
+neighbor_freshness_gain
+neighbor_version_gap_normalized
+neighbor_estimate_confidence
+clipped_bottleneck_score
+```
+
+This makes the Stage-2 MPNN edge input four-dimensional. The existing
+`binary_fraction` and `normalized_version_gap` modes remain three-dimensional
+for backward compatibility, and simulator metrics such as
+`num_improved_cache_entries` and `innovative_entries_per_tx` are unchanged.
 
 ## 8. `constraints`
 
@@ -477,14 +558,14 @@ mpnn:
   message_hidden_dims: [32]
   message_dim: 16
   update_hidden_dims: [64, 64]
-  aggregation: mean_max
+  aggregation: mean_max                 # 或 curvature_attention_max
   condition_message_on_receiver: true
   use_sender_node_features: false
   use_curvature_edge_feature: true
   bmax: 1.0
 ```
 
-- `aggregation`：当前要求 `mean_max`；
+- `aggregation`：支持 `mean_max` 和 `curvature_attention_max`；
 - `condition_message_on_receiver`：消息是否结合接收节点状态；
 - `use_sender_node_features`：当前分布式设计为 false；
 - `use_curvature_edge_feature`：是否输入局部边瓶颈分数；
@@ -638,6 +719,7 @@ validation:
   trigger: every_episodes
   every_episodes: 10
   checkpoint_mode: validation_best_only
+  evaluate_baselines: true
   scenario_generation:
     mode: auto
     scenario_count: 20
@@ -650,6 +732,8 @@ validation:
 - 启动时从 `master_seed` 生成一次固定验证集；
 - 整个训练过程每次 checkpoint 评估复用同一组场景；
 - 自动场景写入 seed manifest。
+- `evaluate_baselines: false` 时，训练期固定验证只运行 NN，并仍记录
+  `nn_mean_VAoI`、`nn_mean_action_probability` 和 `nn_actual_tx_ratio`；最终完整评估时改回 `true`。
 
 ### 13.2 显式模式（兼容旧实验）
 
@@ -788,6 +872,20 @@ training:
 ```
 
 这不会增加 Actor 网络层，只改变训练 advantage 和乘子状态。
+
+### 16.6 训练加速选项
+
+```yaml
+training:
+  diagnostics:
+    enabled: false
+    every_episodes: 20
+    include_mpnn_messages: false
+```
+
+训练时 Critic 会在一个 rollout 结束后批量推理，而不是每个 slot 单独推理。
+`diagnostics.enabled: false` 会跳过 Stage-2 诊断；开启后只在指定 episode
+间隔收集 `q_base`、residual 和可选的 MPNN message 统计。
 
 ---
 

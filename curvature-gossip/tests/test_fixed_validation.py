@@ -7,11 +7,24 @@ import numpy as np
 import yaml
 
 from curvature_gossip.learning.ctde_ppo import CTDEPPO
-from curvature_gossip.learning.trainer import _is_bmax_feasible, _write_csv_history
+from curvature_gossip.learning.trainer import _copy_source_config, _is_bmax_feasible, _write_csv_history
 from curvature_gossip.learning.validation import evaluate_fixed_validation, probability_statistics
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_copy_source_config_preserves_input_yaml(tmp_path):
+    """结果目录应保留训练实际使用的原始 YAML，而不是仅保存解析后的配置。"""
+    source = tmp_path / "experiment.yaml"
+    source.write_text("# anchor and comment\nexperiment:\n  id: demo\n", encoding="utf-8")
+    output_directory = tmp_path / "result"
+    output_directory.mkdir()
+
+    copied = _copy_source_config(str(source), output_directory)
+
+    assert copied == output_directory / "source_config.yaml"
+    assert copied.read_text(encoding="utf-8") == source.read_text(encoding="utf-8")
 
 
 def _tiny_validation_config():
@@ -53,6 +66,23 @@ def test_fixed_validation_is_reproducible_and_uses_matched_rate_random():
         "action_prob_per_node_mean_std",
     ):
         assert name in summary_a and np.isfinite(summary_a[name])
+
+
+def test_fixed_validation_can_run_nn_only_and_keeps_mean_probability():
+    """NN-only validation retains checkpoint-selection probability metrics."""
+    raw = _tiny_validation_config()
+    raw["validation"]["evaluate_baselines"] = False
+    model = CTDEPPO(seed=124)
+    try:
+        summary, rows = evaluate_fixed_validation(model, raw, 0, "nn_only")
+    finally:
+        model.close()
+    assert [row["policy"] for row in rows] == ["nn"]
+    assert summary["baseline_evaluation_enabled"] is False
+    assert np.isfinite(summary["nn_mean_action_probability"])
+    assert np.isfinite(summary["nn_actual_tx_ratio"])
+    assert "matched_random_mean_VAoI" not in summary
+    assert "fixed_random_mean_VAoI" not in summary
 
 
 def test_stage2_fixed_validation_includes_stage1_only_and_compact_ordered_csv(tmp_path):

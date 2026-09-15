@@ -10,7 +10,10 @@ from typing import Mapping
 
 import numpy as np
 
-from .features import GLOBAL_STATE_DIM, NODE_FEATURE_DIM, node_critic_feature_names
+from .features import (
+    GLOBAL_STATE_DIM, NODE_FEATURE_DIM, node_critic_feature_names,
+    stage2_mpnn_edge_feature_names,
+)
 
 
 def resolve_learning_rates(training_config: Mapping, default: float = 3e-4):
@@ -241,26 +244,56 @@ class CTDEPPO:
         self.residual_architecture = None
 
     def _build_mpnn_residual(self, residual):
-        """Build the receiver-conditioned one-hop MPNN with vectorized segment aggregation."""
+        """Build the receiver-conditioned one-hop MPNN and its pooling rule.
+
+        V3.5 adds a fixed curvature-prior attention option.  The attention is
+        deliberately parameter-free: normalized bottleneck curvature controls
+        only the mean-pooling weights, while the element-wise max branch is
+        retained unchanged for a clean V3.4 comparison.
+        """
         tf = self.tf
         node_width = 8 if bool(residual.get("include_scenario_context", False)) else 5
         mpnn = dict(residual.get("mpnn", {}))
+        aggregation = str(mpnn.get("aggregation", "mean_max"))
         if (list(mpnn.get("message_hidden_dims", [32])) != [32]
                 or int(mpnn.get("message_dim", 16)) != 16
                 or list(mpnn.get("update_hidden_dims", [64, 64])) != [64, 64]
-                or mpnn.get("aggregation", "mean_max") != "mean_max"
+                or aggregation not in ("mean_max", "curvature_attention_max")
                 or not bool(mpnn.get("condition_message_on_receiver", True))
                 or bool(mpnn.get("use_sender_node_features", False))):
-            raise ValueError("Stage 2 MPNN must use the fixed receiver-conditioned mean_max architecture")
+            raise ValueError(
+                "Stage 2 MPNN must use the fixed receiver-conditioned mean_max "
+                "or curvature_attention_max architecture"
+            )
         self.use_curvature_edge_feature = bool(mpnn.get("use_curvature_edge_feature", False))
+        if aggregation == "curvature_attention_max" and not self.use_curvature_edge_feature:
+            raise ValueError(
+                "curvature_attention_max requires use_curvature_edge_feature=true"
+            )
+        self.mpnn_aggregation = aggregation
+        self.mpnn_attention_temperature = float(mpnn.get("attention_temperature", 0.5))
+        self.mpnn_attention_uniform_mix = float(mpnn.get("attention_uniform_mix", 0.0))
+        if (not np.isfinite(self.mpnn_attention_temperature)
+                or self.mpnn_attention_temperature <= 0.0):
+            raise ValueError("Stage 2 MPNN attention_temperature must be finite and positive")
+        if (not np.isfinite(self.mpnn_attention_uniform_mix)
+                or not 0.0 <= self.mpnn_attention_uniform_mix <= 1.0):
+            raise ValueError("Stage 2 MPNN attention_uniform_mix must be in [0, 1]")
         self.mpnn_bmax = float(mpnn.get("bmax", 1.0))
         if not np.isfinite(self.mpnn_bmax) or self.mpnn_bmax <= 0.0:
             raise ValueError("Stage 2 MPNN bmax must be finite and positive")
         delta_max = float(residual.get("delta_max", 1.0))
         if not np.isfinite(delta_max) or delta_max <= 0.0:
             raise ValueError("Stage 2 residual.delta_max must be finite and positive")
+        self.mpnn_edge_input_dim = len(stage2_mpnn_edge_feature_names(
+            self.use_curvature_edge_feature,
+            str(mpnn.get("edge_freshness_feature", "binary_fraction")),
+        ))
+        self.mpnn_edge_curvature_index = self.mpnn_edge_input_dim - 1
         self.mpnn_node_context = tf.placeholder(tf.float32, [None, node_width], name="mpnn_node_context")
-        self.mpnn_edge_features = tf.placeholder(tf.float32, [None, 3], name="mpnn_edge_features")
+        self.mpnn_edge_features = tf.placeholder(
+            tf.float32, [None, self.mpnn_edge_input_dim], name="mpnn_edge_features"
+        )
         self.mpnn_edge_receivers = tf.placeholder(tf.int32, [None], name="mpnn_edge_receivers")
         receiver_context = tf.gather(self.mpnn_node_context, self.mpnn_edge_receivers)
         message_input = tf.concat([receiver_context, self.mpnn_edge_features], axis=1, name="message_input")
@@ -277,7 +310,74 @@ class CTDEPPO:
         # TensorFlow 1.x Select does not broadcast the [N, 1] edge mask.
         has_edges = tf.tile(tf.expand_dims(edge_count > 0.0, 1), [1, 16])
         max_message = tf.where(has_edges, max_message, tf.zeros_like(max_message))
+        # V3.5 uses a stable per-receiver softmax over the normalized curvature
+        # edge feature.  A uniform mix can limit attention collapse when enabled.
+        if aggregation == "curvature_attention_max":
+            curvature_scores = tf.clip_by_value(
+                self.mpnn_edge_features[:, self.mpnn_edge_curvature_index], 0.0, 1.0
+            )
+            attention_logits = curvature_scores / self.mpnn_attention_temperature
+            receiver_max_logits = tf.math.unsorted_segment_max(
+                attention_logits, self.mpnn_edge_receivers, node_count
+            )
+            stable_logits = attention_logits - tf.gather(
+                receiver_max_logits, self.mpnn_edge_receivers
+            )
+            unnormalized_weights = tf.exp(stable_logits)
+            weight_sum = tf.math.unsorted_segment_sum(
+                unnormalized_weights, self.mpnn_edge_receivers, node_count
+            )
+            curvature_weights = unnormalized_weights / tf.maximum(
+                tf.gather(weight_sum, self.mpnn_edge_receivers), 1e-12
+            )
+            edge_uniform_weights = 1.0 / tf.maximum(
+                tf.gather(edge_count, self.mpnn_edge_receivers), 1.0
+            )
+            attention_weights = (
+                (1.0 - self.mpnn_attention_uniform_mix) * curvature_weights
+                + self.mpnn_attention_uniform_mix * edge_uniform_weights
+            )
+            weighted_messages = edge_messages * tf.expand_dims(attention_weights, 1)
+            mean_message = tf.math.unsorted_segment_sum(
+                weighted_messages, self.mpnn_edge_receivers, node_count
+            )
+        else:
+            # The legacy mean branch has the same normalized weights for
+            # diagnostics, while its numerical aggregation stays unchanged.
+            attention_weights = 1.0 / tf.maximum(
+                tf.gather(edge_count, self.mpnn_edge_receivers), 1.0
+            )
+        attention_weight_sq_sum = tf.math.unsorted_segment_sum(
+            tf.square(attention_weights), self.mpnn_edge_receivers, node_count
+        )
+        attention_effective_degree = tf.where(
+            edge_count > 0.0,
+            1.0 / tf.maximum(attention_weight_sq_sum, 1e-12),
+            tf.zeros_like(attention_weight_sq_sum),
+        )
+        attention_entropy_terms = attention_weights * tf.log(
+            tf.maximum(attention_weights, 1e-12)
+        )
+        attention_entropy = -tf.math.unsorted_segment_sum(
+            attention_entropy_terms, self.mpnn_edge_receivers, node_count
+        )
+        attention_max = tf.math.unsorted_segment_max(
+            attention_weights, self.mpnn_edge_receivers, node_count
+        )
+        attention_max = tf.where(
+            edge_count > 0.0,
+            attention_max,
+            tf.zeros_like(attention_max),
+        )
         self.mpnn_edge_messages = tf.identity(edge_messages, name="edge_messages")
+        self.mpnn_attention_weights = tf.identity(attention_weights, name="attention_weights")
+        self.mpnn_attention_entropy = tf.identity(attention_entropy, name="attention_entropy")
+        self.mpnn_attention_effective_degree = tf.identity(
+            attention_effective_degree, name="attention_effective_degree"
+        )
+        self.mpnn_attention_max_weight = tf.identity(
+            attention_max, name="attention_max_weight"
+        )
         self.mpnn_aggregated_messages = tf.identity(
             tf.concat([mean_message, max_message], axis=1), name="aggregated_messages"
         )
@@ -410,11 +510,7 @@ class CTDEPPO:
     def _encoded_feed(self, encoded):
         if self.actor_stage == 2:
             if self.residual_architecture == "mpnn":
-                edge_features = np.asarray(encoded.edge_features, dtype=np.float32)
-                if not self.actor_curvature_enabled or not self.use_curvature_edge_feature:
-                    # Preserve the 3-column MPNN shape while hard-disabling the curvature column.
-                    edge_features = edge_features.copy()
-                    edge_features[:, 2] = 0.0
+                edge_features = self._prepare_mpnn_edge_features(encoded.edge_features)
                 feed = {self.target_tx_ratios: encoded.target_tx_ratios,
                         self.mpnn_node_context: encoded.node_context, self.mpnn_edge_features: edge_features,
                         self.mpnn_edge_receivers: encoded.edge_index[1]}
@@ -427,6 +523,19 @@ class CTDEPPO:
         if self.actor_stage == 1:
             return {self.curvature_scores: encoded.curvature_scores, self.target_tx_ratios: encoded.target_tx_ratios}
         return {self.node_features: encoded.node_features}
+
+    def _prepare_mpnn_edge_features(self, edge_features):
+        """Validate the configured edge width and mask curvature in ablation mode."""
+        edge_features = np.asarray(edge_features, dtype=np.float32)
+        if edge_features.ndim != 2 or edge_features.shape[1] != self.mpnn_edge_input_dim:
+            raise ValueError(
+                "MPNN edge features must have shape [E, {}]".format(self.mpnn_edge_input_dim)
+            )
+        if not self.actor_curvature_enabled or not self.use_curvature_edge_feature:
+            # Preserve every non-curvature attribute and hard-disable only the curvature column.
+            edge_features = edge_features.copy()
+            edge_features[:, self.mpnn_edge_curvature_index] = 0.0
+        return edge_features
 
     def actor_batch_inputs(self, encoded_steps):
         def step_node_count(item):
@@ -452,10 +561,7 @@ class CTDEPPO:
                 offsets = np.cumsum([0] + node_counts[:-1]).astype(np.int32)
                 edge_indices = [item.edge_index + offset for item, offset in zip(encoded_steps, offsets)]
                 edge_features = np.concatenate([item.edge_features for item in encoded_steps]).astype(np.float32, copy=False)
-                if not self.actor_curvature_enabled or not self.use_curvature_edge_feature:
-                    # Keep the fixed edge width and zero the disabled feature before batching.
-                    edge_features = edge_features.copy()
-                    edge_features[:, 2] = 0.0
+                edge_features = self._prepare_mpnn_edge_features(edge_features)
                 batch = {"target_tx_ratios": np.concatenate([item.target_tx_ratios for item in encoded_steps]),
                         "node_context": np.concatenate([item.node_context for item in encoded_steps]),
                         "edge_index": np.concatenate(edge_indices, axis=1).astype(np.int32, copy=False),
@@ -478,11 +584,7 @@ class CTDEPPO:
     def _actor_batch_feed(self, batch):
         if self.actor_stage == 2:
             if self.residual_architecture == "mpnn":
-                edge_features = np.asarray(batch["edge_features"], dtype=np.float32)
-                if not self.actor_curvature_enabled or not self.use_curvature_edge_feature:
-                    # Apply the same guard to PPO update feeds as to inference feeds.
-                    edge_features = edge_features.copy()
-                    edge_features[:, 2] = 0.0
+                edge_features = self._prepare_mpnn_edge_features(batch["edge_features"])
                 feed = {self.target_tx_ratios: batch["target_tx_ratios"],
                         self.mpnn_node_context: batch["node_context"], self.mpnn_edge_features: edge_features,
                         self.mpnn_edge_receivers: batch["edge_index"][1]}
@@ -588,8 +690,16 @@ class CTDEPPO:
                                    "q_base": self.probabilities}, feed_dict=self._encoded_feed(encoded))
         return {key: np.asarray(value) for key, value in values.items()}
 
-    def stage2_diagnostics(self, encoded):
-        """Return base, residual, and final probabilities for Stage-2 logs and tests."""
+    def stage2_diagnostics(
+        self, encoded, include_mpnn_messages=True, include_mpnn_attention=False
+    ):
+        """Return Stage-2 diagnostics, optionally excluding MPNN messages.
+
+        The message tensors are useful for detailed analysis but require a
+        second TensorFlow fetch.  Attention tensors are independently
+        optional, so training can skip all detailed pooling diagnostics while
+        retaining the base probability and residual statistics.
+        """
         if self.actor_stage != 2:
             return {}
         values = self.session.run({
@@ -599,10 +709,23 @@ class CTDEPPO:
             "q_final": self.probabilities, "residual_input": self.residual_input,
         }, feed_dict=self._encoded_feed(encoded))
         if self.residual_architecture == "mpnn":
-            values.update(self.session.run({
-                "edge_messages": self.mpnn_edge_messages,
-                "aggregated_messages": self.mpnn_aggregated_messages,
-            }, feed_dict=self._encoded_feed(encoded)))
+            optional_fetches = {}
+            if include_mpnn_messages:
+                optional_fetches.update({
+                    "edge_messages": self.mpnn_edge_messages,
+                    "aggregated_messages": self.mpnn_aggregated_messages,
+                })
+            if include_mpnn_attention:
+                optional_fetches.update({
+                    "attention_weights": self.mpnn_attention_weights,
+                    "attention_entropy": self.mpnn_attention_entropy,
+                    "attention_effective_degree": self.mpnn_attention_effective_degree,
+                    "attention_max_weight": self.mpnn_attention_max_weight,
+                })
+            if optional_fetches:
+                values.update(self.session.run(
+                    optional_fetches, feed_dict=self._encoded_feed(encoded)
+                ))
         return {key: np.asarray(value) for key, value in values.items()}
 
     def variable_snapshot(self):

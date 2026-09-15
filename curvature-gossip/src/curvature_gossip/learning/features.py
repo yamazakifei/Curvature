@@ -77,6 +77,12 @@ STAGE2_MPNN_NO_CURVATURE_EDGE_FEATURE_NAMES = (
 )
 STAGE2_MPNN_NODE_CONTEXT_INDICES = (0, 1, 2, 3, 6)
 
+_MPNN_EDGE_FRESHNESS_FEATURES = {
+    "binary_fraction",
+    "normalized_version_gap",
+    "normalized_version_gap_with_gain",
+}
+
 # Feature groups are explicit so checkpoint metadata can explain every critic
 # input and permutation tests can verify that no node identity is encoded.
 NODE_CRITIC_DYNAMIC_GLOBAL_FEATURE_NAMES = (
@@ -122,6 +128,101 @@ def _validate_probability(name: str, value: float, strict_lower: bool = False) -
         bound = "(0, 1]" if strict_lower else "[0, 1]"
         raise ValueError(f"{name} must be in {bound}")
     return value
+
+
+def _resolve_mpnn_edge_freshness_feature(name: str) -> str:
+    """Validate the MPNN freshness schema used to build edge attributes."""
+    name = str(name)
+    if name not in _MPNN_EDGE_FRESHNESS_FEATURES:
+        raise ValueError(
+            "unknown MPNN edge freshness feature: {} (expected binary_fraction, normalized_version_gap, or normalized_version_gap_with_gain)".format(name)
+        )
+    return name
+
+
+def _resolve_version_gap_tau(
+    update_probability: float,
+    confidence_time_constant: float,
+    configured_tau: float = None,
+) -> float:
+    """Resolve a fixed or update-aware scale for positive version gaps."""
+    if configured_tau is None:
+        return max(1.0, float(update_probability) * float(confidence_time_constant))
+    configured_tau = float(configured_tau)
+    if not np.isfinite(configured_tau) or configured_tau <= 0.0:
+        raise ValueError("version_gap_tau must be finite and positive")
+    return configured_tau
+
+
+def _edge_freshness_value(
+    own_versions: np.ndarray,
+    neighbor_estimate: np.ndarray,
+    estimate_valid: bool,
+    feature_mode: str,
+    version_gap_tau: float,
+) -> float:
+    """Return the bounded directed freshness signal for one neighbor edge."""
+    if not estimate_valid:
+        return 0.0
+    if feature_mode == "binary_fraction":
+        return float(np.mean(own_versions > neighbor_estimate))
+    # Positive part matches the directed meaning of j -> i: information that
+    # receiver i can potentially provide because its cache is newer.
+    positive_gap = np.maximum(own_versions - neighbor_estimate, 0).astype(np.float32)
+    normalized_gap = 1.0 - np.exp(-positive_gap / float(version_gap_tau))
+    return float(np.mean(normalized_gap))
+
+
+def stage2_mpnn_edge_feature_names(
+    use_curvature_edge_feature: bool = True,
+    edge_freshness_feature: str = "binary_fraction",
+) -> Tuple[str, ...]:
+    """Return metadata names for the configured MPNN edge tensor."""
+    feature_mode = _resolve_mpnn_edge_freshness_feature(edge_freshness_feature)
+    if feature_mode == "binary_fraction":
+        freshness_names = ("neighbor_freshness_gain",)
+    elif feature_mode == "normalized_version_gap":
+        freshness_names = ("neighbor_version_gap_normalized",)
+    else:
+        # Keep the legacy gain statistic and add version-gap magnitude beside it.
+        freshness_names = (
+            "neighbor_freshness_gain", "neighbor_version_gap_normalized",
+        )
+    return (
+        *freshness_names,
+        "neighbor_estimate_confidence",
+        "clipped_bottleneck_score" if use_curvature_edge_feature else "disabled_zero_placeholder",
+    )
+
+
+def _edge_freshness_features(
+    own_versions: np.ndarray,
+    neighbor_estimate: np.ndarray,
+    estimate_valid: bool,
+    feature_mode: str,
+    version_gap_tau: float,
+) -> Tuple[float, ...]:
+    """Return the requested freshness features while preserving legacy gain semantics."""
+    if feature_mode == "binary_fraction":
+        return (_edge_freshness_value(
+            own_versions, neighbor_estimate, estimate_valid,
+            "binary_fraction", version_gap_tau,
+        ),)
+    if feature_mode == "normalized_version_gap":
+        return (_edge_freshness_value(
+            own_versions, neighbor_estimate, estimate_valid,
+            "normalized_version_gap", version_gap_tau,
+        ),)
+    return (
+        _edge_freshness_value(
+            own_versions, neighbor_estimate, estimate_valid,
+            "binary_fraction", version_gap_tau,
+        ),
+        _edge_freshness_value(
+            own_versions, neighbor_estimate, estimate_valid,
+            "normalized_version_gap", version_gap_tau,
+        ),
+    )
 
 
 def _local_freshness_features(
@@ -322,24 +423,43 @@ def encode_stage2_mpnn_observations(
     include_scenario_context: bool = False,
     use_curvature_edge_feature: bool = False,
     bmax: float = 1.0,
+    edge_normalization: str = "raw_bmax",
+    edge_freshness_feature: str = "binary_fraction",
+    version_gap_tau: float = None,
     use_curvature: bool = True,
 ) -> Stage2MPNNEncodedObservations:
-    """Encode local node state, cache estimates, and an optional clipped curvature edge feature.
+    """Encode local state and fixed-width MPNN edge features.
 
     Each directed ``j -> i`` edge uses only state cached by receiver ``i``;
-    sender current state is intentionally never read.  When enabled, the third
-    edge feature is ``min(max(-kappa_ij, 0), bmax) / bmax``.  In no-curvature
-    mode the third edge column remains a fixed zero placeholder.
+    sender current state is intentionally never read.  ``binary_fraction``
+    encodes the legacy fraction of source entries where the receiver is
+    newer.  ``normalized_version_gap`` replaces that feature with
+    ``mean(1 - exp(-max(own - estimate, 0) / tau))``.  The
+    ``normalized_version_gap_with_gain`` mode keeps both features in that
+    order.  ``raw_bmax`` encodes the curvature edge feature as
+    ``min(max(-kappa_ij, 0), bmax) / bmax``;
+    ``local_degree_bound`` encodes it as
+    ``min(max(-kappa_ij, 0) / max(1, deg(i) + deg(j) - 4), 1)``.  In
+    no-curvature mode keeps the configured curvature column as a fixed zero
+    placeholder.
     """
     observations = tuple(observations)
     if not observations:
         raise ValueError("at least one node observation is required")
     target_tx_ratio = _validate_probability("target_tx_ratio", target_tx_ratio, True)
+    update_probability = _validate_probability("update_probability", update_probability)
     if not np.isfinite(neighbor_confidence_time_constant) or neighbor_confidence_time_constant <= 0.0:
         raise ValueError("neighbor_confidence_time_constant must be positive")
     bmax = float(bmax)
     if not np.isfinite(bmax) or bmax <= 0.0:
         raise ValueError("bmax must be finite and positive")
+    edge_normalization = str(edge_normalization)
+    if edge_normalization not in {"raw_bmax", "local_degree_bound"}:
+        raise ValueError("unknown MPNN edge normalization: {}".format(edge_normalization))
+    edge_freshness_feature = _resolve_mpnn_edge_freshness_feature(edge_freshness_feature)
+    version_gap_tau = _resolve_version_gap_tau(
+        update_probability, neighbor_confidence_time_constant, version_gap_tau
+    )
 
     # Keep the fixed node width while avoiding all curvature reads in ablation mode.
     if use_curvature:
@@ -372,6 +492,9 @@ def encode_stage2_mpnn_observations(
         raise ValueError("each node observation must have a unique node_id")
     node_rows = {node_id: row for row, node_id in enumerate(node_ids)}
     senders, receivers, features = [], [], []
+    edge_feature_width = len(stage2_mpnn_edge_feature_names(
+        use_curvature_edge_feature, edge_freshness_feature,
+    ))
     for receiver_row, observation in enumerate(observations):
         degree = len(observation.neighbor_ids)
         estimates = np.asarray(observation.neighbor_cache_estimates, dtype=np.int64)
@@ -385,17 +508,28 @@ def encode_stage2_mpnn_observations(
         for neighbor_index, sender_id in enumerate(observation.neighbor_ids):
             if int(sender_id) not in node_rows:
                 raise ValueError("every observed neighbor must be present in the observation batch")
-            gain = (float(np.mean(own > estimates[neighbor_index])) if valid[neighbor_index] else 0.0)
+            freshness_features = _edge_freshness_features(
+                own, estimates[neighbor_index], bool(valid[neighbor_index]),
+                edge_freshness_feature, version_gap_tau,
+            )
             confidence = (float(np.exp(-ages[neighbor_index] / neighbor_confidence_time_constant))
                           if valid[neighbor_index] else 0.0)
             if use_curvature and use_curvature_edge_feature:
                 curvature = float(observation.incident_curvatures[int(sender_id)])
                 raw_bottleneck = max(-curvature, 0.0)
-                clipped_bottleneck = min(raw_bottleneck, bmax) / bmax
+                if edge_normalization == "local_degree_bound":
+                    sender_degree = len(observations[node_rows[int(sender_id)]].neighbor_ids)
+                    denominator = max(1, degree + sender_degree - 4)
+                    clipped_bottleneck = min(raw_bottleneck / float(denominator), 1.0)
+                else:
+                    clipped_bottleneck = min(raw_bottleneck, bmax) / bmax
             else:
                 clipped_bottleneck = 0.0
             # Keep all edge inputs on the same [0, 1] scale for the message MLP.
-            feature = np.asarray([gain, confidence, clipped_bottleneck], dtype=np.float32)
+            feature = np.asarray(
+                [*freshness_features, confidence, clipped_bottleneck],
+                dtype=np.float32,
+            )
             if not np.isfinite(feature).all() or np.any(feature < 0.0) or np.any(feature > 1.0):
                 raise ValueError("MPNN edge features must be finite and in [0, 1]")
             senders.append(node_rows[int(sender_id)])
@@ -403,8 +537,8 @@ def encode_stage2_mpnn_observations(
             features.append(feature)
     edge_index = (np.asarray([senders, receivers], dtype=np.int32)
                   if senders else np.empty((2, 0), dtype=np.int32))
-    edge_features = (np.asarray(features, dtype=np.float32).reshape(-1, 3)
-                     if features else np.empty((0, 3), dtype=np.float32))
+    edge_features = (np.asarray(features, dtype=np.float32).reshape(-1, edge_feature_width)
+                     if features else np.empty((0, edge_feature_width), dtype=np.float32))
     if edge_index.shape[1] != edge_features.shape[0]:
         raise ValueError("MPNN edge index and feature counts must agree")
     return Stage2MPNNEncodedObservations(
