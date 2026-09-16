@@ -1,5 +1,53 @@
 # Curvature-Gossip Project Status
 
+## Single-node silence fault evaluation (2026-09-15)
+
+The independent `result_mask/` experiment now evaluates single-node silence
+faults without changing the existing `curvature-gossip/src` implementation.
+`result_mask/run_single_node_silence.py` reuses the existing topology, curvature,
+channel, random policy, and simulator components.  It samples every active
+node with a fixed Bernoulli broadcast probability of 0.1 and forces the selected
+fault node's action to `False` at every slot.  The fault node remains in the
+simulator and can receive information; it cannot broadcast or forward packets.
+
+The baseline and each single-node counterfactual share topology, shadowing,
+source-update, fading, and random-action streams.  Results include mean AoI,
+time-averaged maximum/minimum AoI, observed maximum/minimum AoI, deltas against
+the paired baseline, node curvature, and Pearson/Spearman curvature-impact
+statistics.  The output also records configured/mean policy broadcast
+probability, actual network broadcast ratio, active-node actual ratio, and the
+fault-node activity ratio.  Plots are written under `result_mask/outputs/.../plots/`.
+
+Default run:
+
+```powershell
+conda run --no-capture-output -n GRL_AoI_cpu37 python result_mask/run_single_node_silence.py --config result_mask/config_single_node_silence.yaml
+```
+
+The formal run completed with 101 scenarios (one baseline plus all 100 node
+failures) at 5000 slots and 100 warm-up slots.  The paired baseline had
+`mean_aoi=5.59837`, `mean_max_aoi=21.67163`, and an actual network broadcast
+ratio of `0.099884`; the configured and mean policy broadcast probability was
+`0.1`.  Across the 100 silent-node cases, the mean increase in `mean_aoi` was
+`2.53262`, while the mean increase in time-averaged maximum AoI was `232.90246`.
+The time-averaged minimum AoI was zero in every case, so its change is not
+informative for this topology and traffic setting.  The raw node-curvature
+Spearman correlation was `-0.33535` for mean-AoI degradation and `0.02902` for
+time-averaged maximum-AoI degradation.  These are single-topology,
+single-channel-seed, single-update-seed results and should be treated as an
+initial diagnostic rather than a general conclusion about curvature.
+
+A paired formal run with `source.update_probability=0.2` was then completed
+under `result_mask/outputs/single_node_silence_p01_update_u02/`, using the same
+topology, broadcast probability, slots, and random seeds.  It also contains
+101 scenarios and has zero fault-node broadcast activity in all 100 fault
+cases.  Its baseline was `mean_aoi=11.23061`, `mean_max_aoi=38.48633`, with
+actual broadcast ratio `0.099884` and configured/mean policy broadcast
+probability `0.1`.  The mean fault-induced increases were `5.06193` for mean
+AoI and `470.25135` for time-averaged maximum AoI.  Raw node-curvature
+Spearman correlations were `-0.39719` for mean-AoI degradation and `-0.03233`
+for maximum-AoI degradation; minimum AoI remained zero for all scenarios.
+
 ## Cross-N community-topology training (2026-08-06)
 
 The new cross-N configuration is

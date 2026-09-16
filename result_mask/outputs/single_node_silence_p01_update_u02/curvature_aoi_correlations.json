@@ -1,0 +1,51 @@
+{
+  "metrics": {
+    "absolute_node_curvature": {
+      "mean_aoi": {
+        "n": 100,
+        "pearson_p": 0.0002684563632530412,
+        "pearson_r": -0.356812512784205,
+        "spearman_p": 0.0002808132104638048,
+        "spearman_r": -0.35575264252378097
+      },
+      "mean_max_aoi": {
+        "n": 100,
+        "pearson_p": 0.913916424021129,
+        "pearson_r": -0.010947305161132723,
+        "spearman_p": 0.5886991232185004,
+        "spearman_r": -0.054719636122766896
+      },
+      "mean_min_aoi": {
+        "n": 100,
+        "pearson_p": null,
+        "pearson_r": null,
+        "spearman_p": null,
+        "spearman_r": null
+      }
+    },
+    "node_curvature": {
+      "mean_aoi": {
+        "n": 100,
+        "pearson_p": 6.919882297397897e-06,
+        "pearson_r": -0.4327081231335013,
+        "spearman_p": 4.2833617831266414e-05,
+        "spearman_r": -0.39719291087160724
+      },
+      "mean_max_aoi": {
+        "n": 100,
+        "pearson_p": 0.7698309809930529,
+        "pearson_r": 0.029625643627613274,
+        "spearman_p": 0.7495197678613164,
+        "spearman_r": -0.03232532950908491
+      },
+      "mean_min_aoi": {
+        "n": 100,
+        "pearson_p": null,
+        "pearson_r": null,
+        "spearman_p": null,
+        "spearman_r": null
+      }
+    }
+  },
+  "sample_count": 100
+}
