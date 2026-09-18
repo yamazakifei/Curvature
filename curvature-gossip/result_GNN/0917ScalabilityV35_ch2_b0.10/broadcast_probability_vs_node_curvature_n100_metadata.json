@@ -1,0 +1,27 @@
+{
+  "checkpoint_episodes": {
+    "v35_curvature": 480,
+    "v35_no_curvature": 120
+  },
+  "checkpoint_paths": {
+    "v35_curvature": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\mpnnV3.5_CurvAttn_ch2_n100_u0.20_4EdgeFeature_rawBmax\\checkpoints\\best_validation_Bmax\\model",
+    "v35_no_curvature": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\mpnnV3.5_CurvAttn_ch2_n100_u0.20_noCurv\\checkpoints\\best_validation_Bmax\\model"
+  },
+  "evaluation": "N=100 V3.5 ch2 node broadcast probability versus minimum incident-edge curvature",
+  "models": {
+    "v35_curvature_stage1_only": "same curvature checkpoint; predict_stage1_probabilities",
+    "v35_curvature_stage2": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\mpnnV3.5_CurvAttn_ch2_n100_u0.20_4EdgeFeature_rawBmax",
+    "v35_no_curvature_stage2": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\mpnnV3.5_CurvAttn_ch2_n100_u0.20_noCurv"
+  },
+  "node_count": 100,
+  "node_curvature_definition": "min incident edge curvature",
+  "node_curvature_formula": "kappa_node(v) = min_{u in N(v)} kappa_edge(v,u)",
+  "plots": [
+    "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0917ScalabilityV35_ch2\\broadcast_probability_vs_node_curvature_n100.png",
+    "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0917ScalabilityV35_ch2\\broadcast_probability_vs_node_curvature_n100.pdf"
+  ],
+  "random_slot": 246,
+  "random_slot_seed": 20260917,
+  "scenario_id": "n100_s00",
+  "slots": 500
+}

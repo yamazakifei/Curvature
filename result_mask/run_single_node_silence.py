@@ -3,7 +3,8 @@
 本脚本不修改 curvature-gossip 现有源码。它复用现有拓扑、曲率、信道和
 GossipSimulator，在每个时隙用固定 Bernoulli 概率生成广播动作，再将指定
 故障节点的动作强制设为 False，从而实现节点静默故障。基准组和每个故障组
-使用完全相同的外生随机流，便于进行配对的 AoI 退化比较。
+使用完全相同的外生随机流，便于进行配对的 AoI 退化比较。实验结束后还会
+自动生成节点平均曲率、节点最小相邻边曲率和边曲率分布图。
 """
 
 from __future__ import annotations
@@ -496,7 +497,6 @@ def _make_plots(
     plots_directory.mkdir(parents=True, exist_ok=True)
     for topology_seed, (topology, node_rows) in topologies.items():
         _plot_topology(plots_directory / "topology_{}_curvature.png".format(topology_seed), topology, node_rows)
-    _plot_impact_scatter(plots_directory / "curvature_vs_aoi_impact.png", rows)
     _plot_node_impact(plots_directory / "per_node_aoi_impact.png", rows)
     _plot_baseline_failure(plots_directory / "baseline_vs_failure_aoi.png", rows)
 
@@ -708,6 +708,13 @@ def run_experiment(
     })
     if bool(output_config.get("make_plots", True)):
         _make_plots(output_directory / "plots", topologies, rows)
+        # 复用独立后处理模块，自动补充节点最小曲率和边曲率分布图。
+        try:
+            from plot_node_min_curvature import postprocess_scenario
+        except ImportError:
+            # 支持从项目根目录以模块方式调用本脚本。
+            from result_mask.plot_node_min_curvature import postprocess_scenario
+        postprocess_scenario(output_directory)
     return output_directory
 
 

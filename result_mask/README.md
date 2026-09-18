@@ -30,7 +30,9 @@ conda run --no-capture-output -n GRL_AoI_cpu37 python result_mask/run_single_nod
 - `topology_<seed>/topology_nodes.csv`：节点曲率、曲率排名、度数和介数等信息；
 - `topology_<seed>/channel_<seed>/update_<seed>/baseline/`：无故障基准结果；
 - `topology_<seed>/channel_<seed>/update_<seed>/node_<id>/`：对应节点静默结果；
-- `plots/curvature_vs_aoi_impact.png`：节点曲率与 AoI 退化散点图；
+- `plots/Curv_vs_aoi_NodeMean.png`：按平均相邻边曲率绘制的 AoI 退化散点图；
+- `plots/Curv_vs_aoi_NodeMin.png`：按最小相邻边曲率绘制的 AoI 退化散点图；
+- `plots/EdgeCurv_Distribution.png`：边曲率计数直方图；
 - `plots/per_node_aoi_impact.png`：按节点曲率排序的三类 AoI 退化图；
 - `plots/baseline_vs_failure_aoi.png`：基准和每个节点故障后的 AoI 对比；
 - `plots/topology_<seed>_curvature.png`：节点曲率拓扑图；
@@ -50,3 +52,28 @@ conda run --no-capture-output -n GRL_AoI_cpu37 python result_mask/run_single_nod
 - `actual_tx_ratio`：实际采样动作中的广播比例。故障节点静默后，全网实际比例会略低于 0.1，这是预期现象。
 
 基准组和各节点故障组使用相同的拓扑、阴影衰落、源更新、Rayleigh 衰落和随机广播流。故障节点仍存在并可以接收信息，但不会发送或转发信息。
+
+## 节点最小曲率后处理
+
+运行 `run_single_node_silence.py` 时，在原有 AoI 图生成后会自动生成以下后处理结果。
+对于已经完成的旧场景，也可以使用以下独立脚本在不重新运行仿真的情况下补图：
+
+```powershell
+conda run --no-capture-output -n GRL_AoI_cpu37 python result_mask/plot_node_min_curvature.py
+```
+
+脚本将节点曲率重新定义为相邻边曲率的最小值：
+
+```text
+node_min_curvature(v) = min{edge_curvature(v, u) | u belongs to N(v)}
+```
+
+每个场景的 `plots/` 目录新增或保留以下结果：
+
+- `Curv_vs_aoi_NodeMean.png`：按平均相邻边曲率重新绘制的 AoI 散点图；
+- `Curv_vs_aoi_NodeMin.png`：节点最小相邻边曲率与三类 AoI 退化的散点图；
+- `EdgeCurv_Distribution.png`：边曲率计数直方图；
+- `topology_<seed>/topology_nodes_node_min.csv`：节点最小曲率及其对应最小曲率边；
+- `curvature_postprocess_manifest.json`：后处理定义、直方图 bins 和平均广播概率。
+
+旧的 `curvature_vs_aoi_impact.png` 不再由主实验脚本生成。图标题会标注结果中的平均广播概率。

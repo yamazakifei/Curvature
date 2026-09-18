@@ -1,0 +1,7 @@
+model,model_label,panel,slot,mean_action_probability,min_action_probability,max_action_probability
+v35_curvature_stage2,Curvature Stage-2,random_slot,246,0.09820906564593315,0.04523637890815735,0.21912634372711182
+v35_curvature_stage2,Curvature Stage-2,mean_500_slots,all,0.0994174757192284,0.0691456887125969,0.1484039536714554
+v35_no_curvature_stage2,No-curvature Stage-2,random_slot,246,0.10708546191453934,0.06763958930969238,0.1550014615058899
+v35_no_curvature_stage2,No-curvature Stage-2,mean_500_slots,all,0.10010058860689401,0.09150145715475082,0.10911195677518845
+v35_curvature_stage1_only,Curvature Stage-1-only,random_slot,246,0.09774803020060062,0.06522423028945923,0.15942996740341187
+v35_curvature_stage1_only,Curvature Stage-1-only,mean_500_slots,all,0.09774803020060062,0.06522423028945923,0.15942996740341187

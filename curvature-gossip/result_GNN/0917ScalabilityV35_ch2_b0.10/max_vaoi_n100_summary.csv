@@ -1,0 +1,4 @@
+model,model_label,n_scenarios,n_slots,mean_max_VAoI,std_max_VAoI,min_max_VAoI,p50_max_VAoI,p90_max_VAoI,p95_max_VAoI,p99_max_VAoI,max_of_max_VAoI,mean_action_probability
+v35_curvature_stage2,Curvature Stage-2,5,1000,24.838,10.306598953194113,1.0,27.0,38.0,39.0,41.0,42.0,0.0980196504816413
+v35_no_curvature_stage2,No-curvature Stage-2,5,1000,25.178,10.671935447996592,1.0,28.0,38.0,41.0,44.0,45.0,0.09983854827284813
+v35_curvature_stage1_only,Curvature Stage-1-only,5,1000,26.04,11.393252661387187,1.0,28.0,40.0,43.0,46.0,46.0,0.0959507867693901

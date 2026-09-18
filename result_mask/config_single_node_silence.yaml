@@ -1,9 +1,10 @@
 # 单节点静默故障实验配置：固定随机广播概率为 0.1。
 # 运行：conda run --no-capture-output -n GRL_AoI_cpu37 python result_mask/run_single_node_silence.py --config result_mask/config_single_node_silence.yaml
 experiment:
-  id: single_node_silence_random_p01_update_u02
+  id: single_node_silence_random_p01_u005_ch1_SINRth0
+  description: "单节点静默故障实验：固定随机广播概率为 0.1，更新概率为 0.05，单个社区，SINR 阈值为 0 dB。"
   master_seed: 20260915
-  slots: 5000
+  slots: 500
   warmup_slots: 100
   trace_stride: 10
   topology_seeds: [1]
@@ -28,20 +29,20 @@ topology:
     max_attempts: 2000
 
 source:
-  update_probability: 0.2
+  update_probability: 0.05
 
 channel:
   tx_power_dbm: 20.0
-  pathloss_reference_db: 40.0
+  pathloss_reference_db: 30.0
   reference_distance_m: 1.0
-  pathloss_exponent: 3.0
-  shadowing_std_db: 4.0
+  pathloss_exponent: 2.5
+  shadowing_std_db: 0.0
   reciprocal_shadowing: true
-  rayleigh_fading: true
+  rayleigh_fading: false
   noise_psd_dbm_per_hz: -174.0
-  bandwidth_hz: 5000000.0
-  noise_figure_db: 7.0
-  sinr_threshold_db: 0.0
+  bandwidth_hz: 1000000.0
+  noise_figure_db: 5.0
+  sinr_threshold_db: 0
 
 curvature:
   method: global_orc
@@ -61,6 +62,6 @@ actor:
     base_tx_ratio: 1.0
 
 output:
-  root: result_mask/outputs/single_node_silence_p01_update_u02
+  root: single_node_silence_random_p01_u005_ch1_SINRth0
   save_per_slot: true
   make_plots: true

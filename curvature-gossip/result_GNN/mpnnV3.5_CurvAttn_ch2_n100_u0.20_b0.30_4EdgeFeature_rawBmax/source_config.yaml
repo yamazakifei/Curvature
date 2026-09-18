@@ -1,0 +1,223 @@
+# V3.5 Stage-2 MPNN using curvature-prior attention pooling.
+# Stage-1 keeps distributed AF3 local-degree-bound normalization, while the
+# Stage-2 edge attributes keep the V3.3 freshness-gain statistic and add the
+# V3.4 normalized version-gap feature, followed by confidence and curvature.
+# The weighted mean uses normalized curvature scores; the element-wise max
+# branch remains unchanged. This configuration is derived from V3.4.
+
+experiment:
+  id: mpnnV3.5_CurvAttn_ch2_n100_u0.20_b0.30_4EdgeFeature_rawBmax
+  description: "V3.5 single-N: curvature-prior attention weighted mean plus element-wise max, with normalized version-gap and legacy freshness-gain edge features and raw_bmax encoding. Bmax=0.30 and open search in stage1."
+  master_seed: 20260723
+  slots: &full_evaluation_slots 500
+
+# Changing master_seed derives new calibration/search/training/validation streams.
+randomness:
+  mode: derived_namespaces
+  save_manifest: true
+  derivation_version: v1
+
+topology:
+  type: soft_two_community
+  params:
+    n_nodes: &n_nodes 100
+    cluster_sizes: [50, 50]
+    area_width_m: 400.0
+    area_height_m: 300.0
+    communication_radius_m: 40.0
+    center_separation_m: 160.0
+    cluster_radius_m: 80.0
+    cross_edge_count_range: [2, 4]
+    min_cross_endpoints_per_cluster: 2
+    min_degree: 3
+    require_induced_cluster_connected: true
+    min_edge_connectivity: 2
+    max_attempts: 2000
+
+source:
+  update_probability: &update_probability 0.20
+
+channel:
+  tx_power_dbm: 20.0
+  pathloss_reference_db: 30.0
+  reference_distance_m: 1.0
+  pathloss_exponent: 2.5
+  shadowing_std_db: 0.0
+  reciprocal_shadowing: true
+  rayleigh_fading: true
+  noise_psd_dbm_per_hz: -174.0
+  bandwidth_hz: 1000000.0
+  noise_figure_db: 5.0
+  sinr_threshold_db: 0
+
+curvature:
+  method: distributed_af3
+  normalization: local_degree_bound
+
+constraints:
+  # This Bmax is the long-run network-wide broadcast-probability budget.
+  max_tx_ratio: &max_tx_ratio 0.30
+  per_node_cap_multiplier: 1.5
+
+actor:
+  stage: 2
+  curvature:
+    enabled: true
+    score: incident_bottleneck_max
+    center_mode: none
+    center: 0.0
+    alpha_parameterization: softplus
+    alpha_init: 1.5
+    # Match the persisted Stage-1 values in the Bmax=1 reference result.
+    alpha_override: null  # stage1曲率影响强度的固定覆盖值
+
+    base_search:
+      schema_version: v3_2
+      enabled: true
+      calibration:
+        topology_count: 32
+        intercept_tolerance: 1.0e-6
+        intercept_max_iterations: 100
+      base_candidates:
+        mode: coarse_to_fine
+        min_fraction_of_max: 0.25
+        max_fraction_of_max: 1.0
+        coarse_count: 7
+        refine: true
+        refine_count: 5
+        refine_per_alpha: true
+      alpha_candidates: [0.5, 1.0, 1.2, 1.5, 1.8, 2.5]
+      evaluation:
+        topology_count: 20
+        dynamic_repeats: 2
+        coarse_topology_count: 10
+        coarse_dynamic_repeats: 1
+        coarse_slots: 200
+        full_slots: *full_evaluation_slots
+        slots: *full_evaluation_slots
+        metric: mean_VAoI
+        max_probability_tolerance: 0.005
+        tie_relative_tolerance: 0.01
+        prefer_lower_probability_on_tie: true
+        candidate_selection:
+          coarse_keep_top_k_per_alpha: 2
+        cache:
+          enabled: true
+          cache_topology: true
+          cache_curvature: true
+          cache_propagation: true
+        parallel:
+          enabled: true
+          backend: process
+          workers: 4
+          chunksize: 1
+          deterministic_order: true
+        runtime_profile:
+          enabled: true
+          output_file: stage1_search_runtime.json
+      save_per_scenario: true
+
+  residual:
+    enabled: true
+    architecture: mpnn
+    hidden_dims: [64, 64]
+    activation: relu
+    delta_max: 1.0
+    zero_init_output: true
+    use_stage1_reference: true
+    detach_stage1_reference: true
+    include_scenario_context: false
+    include_curvature_mean: false
+    include_curvature_freshness_interaction: false
+    freeze_stage1: true
+    mpnn:
+      message_hidden_dims: [32]
+      message_dim: 16
+      update_hidden_dims: [64, 64]
+      aggregation: curvature_attention_max  # 使用CurvAttn or 使用mean_max
+      condition_message_on_receiver: true
+      use_sender_node_features: false
+      use_curvature_edge_feature: true
+      # Same curvature-edge scale as V3.3; bmax clips and normalizes raw AF3 curvature.
+      bmax: 20.0
+      # Stage-1 still uses local_degree_bound through curvature.normalization above.
+      edge_normalization: raw_bmax
+      # Keep the V3.3/V3.4 freshness-gain statistic and add normalized version-gap.
+      # The resulting edge schema is [gain, version_gap, confidence, curvature].
+      edge_freshness_feature: normalized_version_gap_with_gain
+      # null derives tau=max(1, update_probability * neighbor_confidence_time_constant).
+      version_gap_tau: null
+      # V3.5 attention uses softmax(clipped_bottleneck_score / temperature).
+      attention_temperature: 0.5
+      # Optional uniform component limits attention concentration; zero is pure curvature attention.
+      attention_uniform_mix: 0.0
+
+critic:
+  architecture: node_conditioned
+  hidden_dims: [64, 64]
+  activation: relu
+  include_scenario_context: true
+  include_exact_node_features: true
+  include_channel_features: true
+  include_curvature_features: true
+  advantage_mode: node_gae
+  bootstrap_rollout_end: true
+
+observation:
+  consecutive_tx_scale: 3.0
+  neighbor_confidence_time_constant: 20.0
+  congestion_ewma_beta: 0.8
+  congestion_feature_scale: 5.0
+
+training:
+  episodes: 500
+  rollout_slots: 400
+  max_tx_ratios: [*max_tx_ratio]
+  node_counts: [*n_nodes]
+  update_probabilities: [*update_probability]
+  actor_learning_rate: 0.0001
+  critic_learning_rate: 0.0003
+  common_mode_coefficient: 0.05
+  # Penalize only the per-rollout whole-network mean probability above Bmax.
+  probability_budget_coefficient: 0.8
+  clip_ratio: 0.2
+  entropy_coefficient: 0.0
+  # Attention statistics add rollout inference only when diagnostics are enabled.
+  diagnostics:
+    enabled: false
+    every_episodes: 20
+    include_mpnn_messages: false
+    include_mpnn_attention: false
+  gamma: 0.99
+  gae_lambda: 0.95
+  ppo_epochs: 4
+  vaoi_reward_scale: 0.1
+  use_budget_advantage: true
+  update_multiplier: true
+  initial_multiplier: 0.0
+  multiplier_learning_rate: 0.01
+  multiplier_max: 0.15
+  tx_ratio_ema_beta: 0.5
+  budget_relative_tolerance: 0.0
+  multiplier_error_clip: 1.0
+  initial_checkpoint: null
+  restore_actor_only: true
+
+validation:
+  enabled: true
+  trigger: every_episodes
+  every_episodes: 10
+  checkpoint_mode: validation_best_only
+  evaluate_baselines: false
+  scenario_generation:
+    mode: auto
+    scenario_count: 20
+    slots: *full_evaluation_slots
+    n_nodes: *n_nodes
+    update_probability: *update_probability
+    max_tx_ratio: *max_tx_ratio
+
+output:
+  root: result_GNN
+  save_per_slot: false
+  make_plots: false

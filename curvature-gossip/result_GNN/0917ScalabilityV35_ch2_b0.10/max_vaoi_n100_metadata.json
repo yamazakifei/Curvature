@@ -1,0 +1,28 @@
+{
+  "checkpoint_episodes": {
+    "v35_curvature": 480,
+    "v35_no_curvature": 120
+  },
+  "checkpoint_paths": {
+    "v35_curvature": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\mpnnV3.5_CurvAttn_ch2_n100_u0.20_4EdgeFeature_rawBmax\\checkpoints\\best_validation_Bmax\\model",
+    "v35_no_curvature": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\mpnnV3.5_CurvAttn_ch2_n100_u0.20_noCurv\\checkpoints\\best_validation_Bmax\\model"
+  },
+  "data_files": [
+    "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0917ScalabilityV35_ch2\\max_vaoi_n100_per_slot.csv",
+    "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0917ScalabilityV35_ch2\\max_vaoi_n100_summary.csv"
+  ],
+  "definition": "per-slot maximum_version_age over 5 scenarios and 200 slots per scenario",
+  "evaluation": "N=100 maximum-VAoI distribution for three V3.5 ch2 modes",
+  "models": {
+    "v35_curvature_stage1_only": "same curvature checkpoint; predict_stage1_probabilities",
+    "v35_curvature_stage2": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\mpnnV3.5_CurvAttn_ch2_n100_u0.20_4EdgeFeature_rawBmax",
+    "v35_no_curvature_stage2": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\mpnnV3.5_CurvAttn_ch2_n100_u0.20_noCurv"
+  },
+  "node_count": 100,
+  "plots": [
+    "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0917ScalabilityV35_ch2\\max_vaoi_n100_distribution.png",
+    "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0917ScalabilityV35_ch2\\max_vaoi_n100_distribution.pdf"
+  ],
+  "scenarios_per_model": 5,
+  "slots_per_scenario": 200
+}

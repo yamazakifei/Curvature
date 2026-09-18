@@ -1,0 +1,32 @@
+{
+  "aoi_metric_definition": {
+    "max_aoi": "maximum pair AoI observed over post-warmup slots",
+    "mean_aoi": "post-warmup mean over ordered source-receiver pairs and slots",
+    "mean_max_aoi": "post-warmup mean of the per-slot maximum pair AoI",
+    "mean_min_aoi": "post-warmup mean of the per-slot minimum pair AoI",
+    "min_aoi": "minimum pair AoI observed over post-warmup slots"
+  },
+  "channel_seeds": [
+    0
+  ],
+  "config": "D:\\ZMF\\2026Curvature\\result_mask\\config_single_node_silence.yaml",
+  "configured_broadcast_probability": 0.1,
+  "curvature_method": "global_orc",
+  "experiment_id": "single_node_silence_random_p01_u02_ch1",
+  "failure_model": "silence: failed node cannot transmit, but remains as a receiver/source state",
+  "mean_policy_probability": 0.1,
+  "output_directory": "D:\\ZMF\\2026Curvature\\result_mask\\outputs\\single_node_silence_random_p01_u02_ch1",
+  "paired_random_streams": true,
+  "scenario_count": 101,
+  "script": "D:\\ZMF\\2026Curvature\\result_mask\\run_single_node_silence.py",
+  "slots": 500,
+  "topology_seeds": [
+    1
+  ],
+  "topology_type": "soft_two_community",
+  "trace_stride": 10,
+  "update_seeds": [
+    0
+  ],
+  "warmup_slots": 100
+}

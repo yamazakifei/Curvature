@@ -1,0 +1,15 @@
+{
+  "scenario_directory": "D:\\ZMF\\2026Curvature\\result_mask\\outputs\\single_node_silence_p01_u01",
+  "node_curvature_definition": "min incident edge curvature",
+  "node_curvature_formula": "kappa_node(v) = min_{u in N(v)} kappa_edge(v,u)",
+  "edge_curvature_source": "topology_*/topology_edges.csv",
+  "edge_curvature_method": "existing experiment curvature output (global ORC in current config)",
+  "mean_plot_copy": "Curv_vs_aoi_NodeMean.png",
+  "min_plot": "Curv_vs_aoi_NodeMin.png",
+  "edge_distribution_plot": "EdgeCurv_Distribution.png",
+  "edge_histogram_bins": 20,
+  "mean_broadcast_probability": 0.09999999999999998,
+  "node_min_detail_files": [
+    "topology_1/topology_nodes_node_min.csv"
+  ]
+}
