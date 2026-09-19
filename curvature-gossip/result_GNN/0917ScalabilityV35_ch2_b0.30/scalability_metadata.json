@@ -1,23 +1,27 @@
 {
   "annotation_fontsize": 10.5,
   "checkpoint_episodes": {
+    "v33_curvature_stage2": 220,
     "v35_curvature": 280,
     "v35_no_curvature": 280
   },
   "checkpoint_paths": {
+    "v33_curvature_stage2": "result_GNN\\mpnnV3.3_Bpen_ch2_n100_u0.20_b0.30_curvBmax20\\checkpoints\\best_validation_Bmax\\model",
     "v35_curvature": "result_GNN\\mpnnV3.5_CurvAttn_ch2_n100_u0.20_b0.30_4EdgeFeature_rawBmax\\checkpoints\\best_validation_Bmax\\model",
     "v35_no_curvature": "result_GNN\\mpnnV3.5_CurvAttn_ch2_n100_u0.20_b0.30_noCurv\\checkpoints\\best_validation_Bmax\\model"
   },
-  "evaluation": "V3.5 ch2 community N-generalization with Stage-1-only overlay",
+  "evaluation": "V3.5 ch2 community N-generalization with V3.3 mean-max overlay",
   "evaluation_master_seed": 20260804,
   "geometry_policy": "area and community geometry scale as sqrt(N/100); communication radius is fixed",
   "line_order": [
     "v35_curvature_stage2",
+    "v33_curvature_stage2",
     "v35_no_curvature_stage2",
     "v35_curvature_stage1_only"
   ],
   "mean_broadcast_probability": "summary mean of per-scenario action_prob_mean",
   "models": {
+    "v33_curvature_stage2": "result_GNN\\mpnnV3.3_Bpen_ch2_n100_u0.20_b0.30_curvBmax20",
     "v35_curvature_stage1_only": "same curvature checkpoint; predict_stage1_probabilities",
     "v35_curvature_stage2": "result_GNN\\mpnnV3.5_CurvAttn_ch2_n100_u0.20_b0.30_4EdgeFeature_rawBmax",
     "v35_no_curvature_stage2": "result_GNN\\mpnnV3.5_CurvAttn_ch2_n100_u0.20_b0.30_noCurv"

@@ -544,3 +544,18 @@ the CPU-only evaluation budget, this run uses 100 slots per scenario; the
 runner now accepts `--slots` while retaining the reference default of 200.
 At N=100, the mean VAoI values are 6.2203 (curvature Stage-2), 6.5033
 (no-curvature Stage-2), and 6.9661 (curvature Stage-1 only).
+
+## V3.3 curve added to the V3.5 ch2 Bmax=0.30 comparison (2026-09-18)
+
+Added `scripts/add_v33_curve_to_v35_scalability.py` to evaluate only the
+V3.3 checkpoint
+`mpnnV3.3_Bpen_ch2_n100_u0.20_b0.30_curvBmax20` on the existing Bmax=0.30
+community YAMLs, then merge it into the existing V3.5 scalability artifacts.
+The new curve uses V3.3 mean-max aggregation and the three-edge-feature
+schema, while the other three curves are reused without re-evaluation.
+
+The combined figure and CSVs remain in
+`result_GNN/0917ScalabilityV35_ch2_b0.30/`. At N=100, the mean VAoI / mean
+Actor broadcast probabilities are V3.5 CurvAttn `6.2203 / 0.0928`, V3.3
+mean-max `6.3582 / 0.0951`, V3.5 no-curvature `6.5033 / 0.1085`, and the
+V3.5 Stage-1-only baseline `6.9661 / 0.0940`.
