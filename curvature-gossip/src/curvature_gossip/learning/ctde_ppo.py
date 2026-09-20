@@ -12,7 +12,7 @@ import numpy as np
 
 from .features import (
     GLOBAL_STATE_DIM, NODE_FEATURE_DIM, node_critic_feature_names,
-    stage2_mpnn_edge_feature_names,
+    stage2_mpnn_edge_feature_names, stage2_mpnn_node_feature_names,
 )
 
 
@@ -252,8 +252,11 @@ class CTDEPPO:
         retained unchanged for a clean V3.4 comparison.
         """
         tf = self.tf
-        node_width = 8 if bool(residual.get("include_scenario_context", False)) else 5
         mpnn = dict(residual.get("mpnn", {}))
+        node_width = len(stage2_mpnn_node_feature_names(
+            bool(mpnn.get("use_node_curvature_score", False)),
+            bool(mpnn.get("use_raw_af3_min_edge_curvature", False)),
+        )) + (3 if bool(residual.get("include_scenario_context", False)) else 0)
         aggregation = str(mpnn.get("aggregation", "mean_max"))
         if (list(mpnn.get("message_hidden_dims", [32])) != [32]
                 or int(mpnn.get("message_dim", 16)) != 16

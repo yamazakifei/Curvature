@@ -94,6 +94,29 @@ def test_mpnn_encoder_supports_local_degree_bound_curvature_edges():
     assert np.isclose(encoded.edge_features[1, 2], 0.25)
 
 
+def test_mpnn_encoder_adds_node_curvature_score_and_raw_af3_minimum():
+    first = _observation(10, [20], [[2, 1, 3]], [True], [2], {20: -2.0})
+    second = _observation(20, [10], [[0, 1, 2]], [False], [-1], {10: -0.25})
+    encoded = encode_stage2_mpnn_observations(
+        [first, second], 0.1, 0.2, use_curvature_edge_feature=True,
+        bmax=4.0, use_node_curvature_score=True,
+        use_raw_af3_min_edge_curvature=True,
+    )
+    assert encoded.node_context.shape == (2, 7)
+    assert np.allclose(encoded.node_context[:, -2:], [[0.5, -2.0], [0.0625, -0.25]])
+
+
+def test_mpnn_node_curvature_score_supports_local_degree_bound():
+    first = _observation(10, [20], [[2, 1, 3]], [True], [2], {20: -2.0})
+    second = _observation(20, [10], [[0, 1, 2]], [False], [-1], {10: -0.25})
+    encoded = encode_stage2_mpnn_observations(
+        [first, second], 0.1, 0.2, bmax=20.0,
+        use_node_curvature_score=True, node_curvature_normalization="local_degree_bound",
+    )
+    # Both endpoints have degree 1, so the degree bound is max(1, 1+1-4)=1.
+    assert np.allclose(encoded.node_context[:, -1], [1.0, 0.25])
+
+
 def test_mpnn_encoder_disables_curvature_edge_feature_for_no_curvature_ablation():
     first = _observation(10, [20], [[2, 1, 3]], [True], [2], {20: -2.0})
     second = _observation(20, [10], [[0, 1, 2]], [False], [-1], {10: -0.25})

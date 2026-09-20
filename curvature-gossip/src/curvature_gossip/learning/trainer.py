@@ -30,7 +30,7 @@ from .features import (
     encode_stage1_observations, encode_stage2_observations, encode_stage2_mpnn_observations,
     encode_node_critic_inputs, node_critic_feature_names,
     stage2_context_feature_names, STAGE2_MPNN_NODE_FEATURE_NAMES,
-    stage2_mpnn_edge_feature_names,
+    stage2_mpnn_edge_feature_names, stage2_mpnn_node_feature_names,
 )
 from .validation import evaluate_fixed_validation, probability_statistics, validation_scenarios
 
@@ -313,6 +313,10 @@ def _stage1_actor_config(raw: Mapping) -> Mapping:
                 "Stage 2 MPNN aggregation must be mean_max or curvature_attention_max"
             )
         use_curvature_edge_feature = bool(mpnn.get("use_curvature_edge_feature", False))
+        use_node_curvature_score = bool(mpnn.get("use_node_curvature_score", False))
+        use_raw_af3_min_edge_curvature = bool(mpnn.get("use_raw_af3_min_edge_curvature", False))
+        if (use_node_curvature_score or use_raw_af3_min_edge_curvature) and not curvature_enabled:
+            raise ValueError("curvature node features require actor.curvature.enabled=true")
         if not use_stage1_reference and use_curvature_edge_feature:
             raise ValueError("no-curvature Stage 2 MPNN must disable use_curvature_edge_feature")
         if aggregation == "curvature_attention_max" and not use_curvature_edge_feature:
@@ -331,6 +335,9 @@ def _stage1_actor_config(raw: Mapping) -> Mapping:
         edge_normalization = str(mpnn.get("edge_normalization", "raw_bmax"))
         if edge_normalization not in {"raw_bmax", "local_degree_bound"}:
             raise ValueError("unknown Stage 2 MPNN edge normalization: {}".format(edge_normalization))
+        node_curvature_normalization = str(mpnn.get("node_curvature_normalization", "raw_bmax"))
+        if node_curvature_normalization not in {"raw_bmax", "local_degree_bound"}:
+            raise ValueError("unknown Stage 2 MPNN node curvature normalization: {}".format(node_curvature_normalization))
         edge_freshness_feature = str(mpnn.get("edge_freshness_feature", "binary_fraction"))
         if edge_freshness_feature not in {
             "binary_fraction", "normalized_version_gap", "normalized_version_gap_with_gain",
@@ -346,19 +353,27 @@ def _stage1_actor_config(raw: Mapping) -> Mapping:
         residual["mpnn"] = dict(
             required, aggregation=aggregation,
             use_curvature_edge_feature=use_curvature_edge_feature,
+            use_node_curvature_score=use_node_curvature_score,
+            use_raw_af3_min_edge_curvature=use_raw_af3_min_edge_curvature,
             attention_temperature=attention_temperature,
             attention_uniform_mix=attention_uniform_mix,
             bmax=bmax, edge_normalization=edge_normalization,
+            node_curvature_normalization=node_curvature_normalization,
             edge_freshness_feature=edge_freshness_feature, version_gap_tau=version_gap_tau,
         )
-        node_features = list(STAGE2_MPNN_NODE_FEATURE_NAMES)
+        node_features = list(stage2_mpnn_node_feature_names(
+            use_node_curvature_score, use_raw_af3_min_edge_curvature,
+        ))
         if bool(residual.get("include_scenario_context", False)):
             node_features += ["log_network_size", "update_probability", "target_tx_ratio"]
         edge_feature_names = list(
             stage2_mpnn_edge_feature_names(use_curvature_edge_feature, edge_freshness_feature)
         )
+        has_node_curvature_features = use_node_curvature_score or use_raw_af3_min_edge_curvature
         architecture_version = (
-            "curvature_stage2_mpnn_v3_5_edge_gain"
+            "curvature_stage2_mpnn_v3_6_node_curvature"
+            if use_stage1_reference and has_node_curvature_features
+            else "curvature_stage2_mpnn_v3_5_edge_gain"
             if (use_stage1_reference and aggregation == "curvature_attention_max"
                 and edge_freshness_feature == "normalized_version_gap_with_gain")
             else "curvature_stage2_mpnn_v3_5"
@@ -377,6 +392,9 @@ def _stage1_actor_config(raw: Mapping) -> Mapping:
             "decoder_input_dim": len(node_features) + 32 + (1 if use_stage1_reference else 0),
             "condition_message_on_receiver": True, "use_sender_node_features": False,
             "use_curvature_edge_feature": use_curvature_edge_feature, "bmax": bmax,
+            "use_node_curvature_score": use_node_curvature_score,
+            "use_raw_af3_min_edge_curvature": use_raw_af3_min_edge_curvature,
+            "node_curvature_normalization": node_curvature_normalization,
             "attention_temperature": attention_temperature,
             "attention_uniform_mix": attention_uniform_mix,
             "edge_normalization": edge_normalization,
@@ -716,6 +734,9 @@ def train_ctde(config_path: str):
                             edge_freshness_feature=str(residual.get("mpnn", {}).get("edge_freshness_feature", "binary_fraction")),
                             version_gap_tau=residual.get("mpnn", {}).get("version_gap_tau"),
                             use_curvature=model.actor_curvature_enabled,
+                            use_node_curvature_score=bool(residual.get("mpnn", {}).get("use_node_curvature_score", False)),
+                            use_raw_af3_min_edge_curvature=bool(residual.get("mpnn", {}).get("use_raw_af3_min_edge_curvature", False)),
+                            node_curvature_normalization=str(residual.get("mpnn", {}).get("node_curvature_normalization", "raw_bmax")),
                         )
                     else:
                         encoded = encode_stage2_observations(

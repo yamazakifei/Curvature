@@ -310,3 +310,11 @@ while retaining the NN's distributed-AF3 curvature input and `b=0.10`.
 The generated red-star overlay, per-seed metrics, aggregate point CSV, and
 provenance record are stored under the Stage-2 result directory's
 `vaoi_vs_transmissions_u0.2_overlay/` subdirectory.
+
+## ch2 节点曲率分布与排名分析（2026-09-19）
+
+新增 `curvature-gossip/scripts/analyze_ch2_node_curvature.py`，按
+`mpnnV3.5_CurvAttn_ch2_n100_u0.20_b0.30_4EdgeFeature_rawBmax/source_config.yaml`
+复现 20 个固定验证拓扑，统计 2000 个节点的 AF3/归一化 AF3/ORC 节点分数，
+并按场景比较三种节点排名。结果和图位于项目根目录
+`ch2_node_curvature_analysis/`；训练结果目录中的 README 记录了指标定义。

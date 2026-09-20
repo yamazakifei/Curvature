@@ -1,0 +1,18 @@
+{
+  "source_config": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\mpnnV3.5_CurvAttn_ch2_n100_u0.20_b0.30_4EdgeFeature_rawBmax\\source_config.yaml",
+  "scenario_count": 20,
+  "node_count_per_scenario": 100,
+  "orc_alpha": 0.5,
+  "af3_normalization": "local_degree_bound",
+  "ranking_direction": "smaller raw curvature means higher rank; normalized score uses larger-is-higher",
+  "outputs": [
+    "analysis_metadata.json",
+    "ch2_node_curvature_analysis.png",
+    "ch2_normalized_curvature_histogram.png",
+    "distribution_summary.csv",
+    "node_curvature_scores.csv",
+    "node_rankings_by_scenario.csv",
+    "ranking_comparison.csv",
+    "scenario_distribution_summary.csv"
+  ]
+}

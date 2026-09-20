@@ -1,0 +1,164 @@
+{
+  "actor": {
+    "aggregated_message_dim": 32,
+    "aggregation": "curvature_attention_max",
+    "architecture_version": "curvature_stage2_mpnn_v3_6_node_curvature",
+    "attention_temperature": 0.5,
+    "attention_uniform_mix": 0.0,
+    "bmax": 20.0,
+    "condition_message_on_receiver": true,
+    "curvature": {
+      "alpha_init": 1.5,
+      "alpha_override": 1.2,
+      "alpha_parameterization": "softplus",
+      "base_search": {
+        "alpha_candidates": [
+          0.5,
+          1.0,
+          1.2,
+          1.5,
+          1.8,
+          2.5
+        ],
+        "base_candidates": {
+          "coarse_count": 7,
+          "max_fraction_of_max": 1.0,
+          "min_fraction_of_max": 0.25,
+          "mode": "coarse_to_fine",
+          "refine": true,
+          "refine_count": 5,
+          "refine_per_alpha": true
+        },
+        "calibration": {
+          "intercept_max_iterations": 100,
+          "intercept_tolerance": 1e-06,
+          "topology_count": 32
+        },
+        "enabled": false,
+        "evaluation": {
+          "cache": {
+            "cache_curvature": true,
+            "cache_propagation": true,
+            "cache_topology": true,
+            "enabled": true
+          },
+          "candidate_selection": {
+            "coarse_keep_top_k_per_alpha": 2
+          },
+          "coarse_dynamic_repeats": 1,
+          "coarse_slots": 200,
+          "coarse_topology_count": 10,
+          "dynamic_repeats": 2,
+          "full_slots": 500,
+          "max_probability_tolerance": 0.005,
+          "metric": "mean_VAoI",
+          "parallel": {
+            "backend": "process",
+            "chunksize": 1,
+            "deterministic_order": true,
+            "enabled": true,
+            "workers": 4
+          },
+          "prefer_lower_probability_on_tie": true,
+          "runtime_profile": {
+            "enabled": true,
+            "output_file": "stage1_search_runtime.json"
+          },
+          "slots": 500,
+          "tie_relative_tolerance": 0.01,
+          "topology_count": 20
+        },
+        "save_per_scenario": true,
+        "schema_version": "v3_2"
+      },
+      "base_tx_ratio": 0.09375,
+      "calibrated_intercept": -2.7744750976562,
+      "center": 0.0,
+      "center_mode": "none",
+      "enabled": true,
+      "score": "incident_bottleneck_max"
+    },
+    "curvature_enabled": true,
+    "decoder_input_dim": 39,
+    "edge_freshness_feature": "normalized_version_gap_with_gain",
+    "edge_input_dim": 4,
+    "edge_input_feature_names": [
+      "neighbor_freshness_gain",
+      "neighbor_version_gap_normalized",
+      "neighbor_estimate_confidence",
+      "clipped_bottleneck_score"
+    ],
+    "edge_normalization": "raw_bmax",
+    "input_feature_names": [
+      "normalized_degree",
+      "time_since_last_tx",
+      "consecutive_tx_attempts",
+      "congestion_ewma",
+      "self_information_increment",
+      "node_curvature_score"
+    ],
+    "message_dim": 16,
+    "message_input_dim": 10,
+    "node_curvature_normalization": "raw_bmax",
+    "node_input_dim": 6,
+    "node_input_feature_names": [
+      "normalized_degree",
+      "time_since_last_tx",
+      "consecutive_tx_attempts",
+      "congestion_ewma",
+      "self_information_increment",
+      "node_curvature_score"
+    ],
+    "residual": {
+      "activation": "relu",
+      "architecture": "mpnn",
+      "delta_max": 1.0,
+      "detach_stage1_reference": true,
+      "enabled": true,
+      "freeze_stage1": true,
+      "hidden_dims": [
+        64,
+        64
+      ],
+      "include_curvature_freshness_interaction": false,
+      "include_curvature_mean": false,
+      "include_scenario_context": false,
+      "mpnn": {
+        "aggregation": "curvature_attention_max",
+        "attention_temperature": 0.5,
+        "attention_uniform_mix": 0.0,
+        "bmax": 20.0,
+        "condition_message_on_receiver": true,
+        "edge_freshness_feature": "normalized_version_gap_with_gain",
+        "edge_normalization": "raw_bmax",
+        "message_dim": 16,
+        "message_hidden_dims": [
+          32
+        ],
+        "node_curvature_normalization": "raw_bmax",
+        "update_hidden_dims": [
+          64,
+          64
+        ],
+        "use_curvature_edge_feature": true,
+        "use_node_curvature_score": true,
+        "use_raw_af3_min_edge_curvature": false,
+        "use_sender_node_features": false,
+        "version_gap_tau": null
+      },
+      "use_stage1_reference": true,
+      "zero_init_output": true
+    },
+    "residual_architecture": "mpnn",
+    "stage": 2,
+    "use_curvature_edge_feature": true,
+    "use_node_curvature_score": true,
+    "use_raw_af3_min_edge_curvature": false,
+    "use_sender_node_features": false,
+    "version_gap_tau": null
+  },
+  "checkpoint": "result_GNN\\mpnnV3.6_NodeCurv_CurvAttn_ch2_n100_u0.20_b0.30_noMinEdgeCurv\\checkpoints\\best_validation_Bmax\\model",
+  "config": "../../training_config.yaml",
+  "episode": 270,
+  "source_config": "configs\\GNN\\mpnnV3.6_ch2_NodeCurv_CurvAttn.yaml"
+}

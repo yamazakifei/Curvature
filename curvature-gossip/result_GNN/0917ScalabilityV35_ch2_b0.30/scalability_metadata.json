@@ -3,19 +3,25 @@
   "checkpoint_episodes": {
     "v33_curvature_stage2": 220,
     "v35_curvature": 280,
-    "v35_no_curvature": 280
+    "v35_no_curvature": 280,
+    "v36_no_min_edge_curvature": 270,
+    "v36_raw_bmax": 430
   },
   "checkpoint_paths": {
     "v33_curvature_stage2": "result_GNN\\mpnnV3.3_Bpen_ch2_n100_u0.20_b0.30_curvBmax20\\checkpoints\\best_validation_Bmax\\model",
     "v35_curvature": "result_GNN\\mpnnV3.5_CurvAttn_ch2_n100_u0.20_b0.30_4EdgeFeature_rawBmax\\checkpoints\\best_validation_Bmax\\model",
-    "v35_no_curvature": "result_GNN\\mpnnV3.5_CurvAttn_ch2_n100_u0.20_b0.30_noCurv\\checkpoints\\best_validation_Bmax\\model"
+    "v35_no_curvature": "result_GNN\\mpnnV3.5_CurvAttn_ch2_n100_u0.20_b0.30_noCurv\\checkpoints\\best_validation_Bmax\\model",
+    "v36_no_min_edge_curvature": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\mpnnV3.6_NodeCurv_CurvAttn_ch2_n100_u0.20_b0.30_noMinEdgeCurv\\checkpoints\\best_validation_Bmax\\model",
+    "v36_raw_bmax": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\mpnnV3.6_NodeCurv_CurvAttn_ch2_n100_u0.20_b0.30_rawBmax\\checkpoints\\best_validation_Bmax\\model"
   },
-  "evaluation": "V3.5 ch2 community N-generalization with V3.3 mean-max overlay",
+  "evaluation": "V3.5 ch2 community N-generalization with V3.3 and V3.6 overlays",
   "evaluation_master_seed": 20260804,
   "geometry_policy": "area and community geometry scale as sqrt(N/100); communication radius is fixed",
   "line_order": [
     "v35_curvature_stage2",
     "v33_curvature_stage2",
+    "v36_no_min_edge_curvature",
+    "v36_raw_bmax",
     "v35_no_curvature_stage2",
     "v35_curvature_stage1_only"
   ],
@@ -24,7 +30,9 @@
     "v33_curvature_stage2": "result_GNN\\mpnnV3.3_Bpen_ch2_n100_u0.20_b0.30_curvBmax20",
     "v35_curvature_stage1_only": "same curvature checkpoint; predict_stage1_probabilities",
     "v35_curvature_stage2": "result_GNN\\mpnnV3.5_CurvAttn_ch2_n100_u0.20_b0.30_4EdgeFeature_rawBmax",
-    "v35_no_curvature_stage2": "result_GNN\\mpnnV3.5_CurvAttn_ch2_n100_u0.20_b0.30_noCurv"
+    "v35_no_curvature_stage2": "result_GNN\\mpnnV3.5_CurvAttn_ch2_n100_u0.20_b0.30_noCurv",
+    "v36_no_min_edge_curvature": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\mpnnV3.6_NodeCurv_CurvAttn_ch2_n100_u0.20_b0.30_noMinEdgeCurv",
+    "v36_raw_bmax": "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\mpnnV3.6_NodeCurv_CurvAttn_ch2_n100_u0.20_b0.30_rawBmax"
   },
   "node_counts": [
     50,
@@ -42,8 +50,8 @@
   "output_root": "result_GNN\\0917ScalabilityV35_ch2_b0.30",
   "physics_source": "result_GNN\\mpnnV3.5_CurvAttn_ch2_n100_u0.20_b0.30_4EdgeFeature_rawBmax\\training_config.yaml",
   "plots": [
-    "result_GNN\\0917ScalabilityV35_ch2_b0.30\\scalability_v35_ch2.png",
-    "result_GNN\\0917ScalabilityV35_ch2_b0.30\\scalability_v35_ch2.pdf"
+    "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0917ScalabilityV35_ch2_b0.30\\scalability_v35_ch2.png",
+    "D:\\ZMF\\2026Curvature\\curvature-gossip\\result_GNN\\0917ScalabilityV35_ch2_b0.30\\scalability_v35_ch2.pdf"
   ],
   "scenarios_per_node_count": 5,
   "slots_per_scenario": 100,

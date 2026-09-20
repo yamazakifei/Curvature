@@ -1,0 +1,283 @@
+{
+  "actor": {
+    "aggregated_message_dim": 32,
+    "aggregation": "curvature_attention_max",
+    "architecture_version": "curvature_stage2_mpnn_v3_6_node_curvature",
+    "attention_temperature": 0.5,
+    "attention_uniform_mix": 0.0,
+    "bmax": 20.0,
+    "condition_message_on_receiver": true,
+    "curvature": {
+      "alpha_init": 1.5,
+      "alpha_override": 1.2,
+      "alpha_parameterization": "softplus",
+      "base_search": {
+        "alpha_candidates": [
+          0.5,
+          1.0,
+          1.2,
+          1.5,
+          1.8,
+          2.5
+        ],
+        "base_candidates": {
+          "coarse_count": 7,
+          "max_fraction_of_max": 1.0,
+          "min_fraction_of_max": 0.25,
+          "mode": "coarse_to_fine",
+          "refine": true,
+          "refine_count": 5,
+          "refine_per_alpha": true
+        },
+        "calibration": {
+          "intercept_max_iterations": 100,
+          "intercept_tolerance": 1e-06,
+          "topology_count": 32
+        },
+        "enabled": false,
+        "evaluation": {
+          "cache": {
+            "cache_curvature": true,
+            "cache_propagation": true,
+            "cache_topology": true,
+            "enabled": true
+          },
+          "candidate_selection": {
+            "coarse_keep_top_k_per_alpha": 2
+          },
+          "coarse_dynamic_repeats": 1,
+          "coarse_slots": 200,
+          "coarse_topology_count": 10,
+          "dynamic_repeats": 2,
+          "full_slots": 500,
+          "max_probability_tolerance": 0.005,
+          "metric": "mean_VAoI",
+          "parallel": {
+            "backend": "process",
+            "chunksize": 1,
+            "deterministic_order": true,
+            "enabled": true,
+            "workers": 4
+          },
+          "prefer_lower_probability_on_tie": true,
+          "runtime_profile": {
+            "enabled": true,
+            "output_file": "stage1_search_runtime.json"
+          },
+          "slots": 500,
+          "tie_relative_tolerance": 0.01,
+          "topology_count": 20
+        },
+        "save_per_scenario": true,
+        "schema_version": "v3_2"
+      },
+      "base_tx_ratio": 0.09375,
+      "calibrated_intercept": -2.7744750976562,
+      "center": 0.0,
+      "center_mode": "none",
+      "enabled": true,
+      "score": "incident_bottleneck_max"
+    },
+    "curvature_enabled": true,
+    "decoder_input_dim": 39,
+    "edge_freshness_feature": "normalized_version_gap_with_gain",
+    "edge_input_dim": 4,
+    "edge_input_feature_names": [
+      "neighbor_freshness_gain",
+      "neighbor_version_gap_normalized",
+      "neighbor_estimate_confidence",
+      "clipped_bottleneck_score"
+    ],
+    "edge_normalization": "raw_bmax",
+    "input_feature_names": [
+      "normalized_degree",
+      "time_since_last_tx",
+      "consecutive_tx_attempts",
+      "congestion_ewma",
+      "self_information_increment",
+      "node_curvature_score"
+    ],
+    "message_dim": 16,
+    "message_input_dim": 10,
+    "node_curvature_normalization": "raw_bmax",
+    "node_input_dim": 6,
+    "node_input_feature_names": [
+      "normalized_degree",
+      "time_since_last_tx",
+      "consecutive_tx_attempts",
+      "congestion_ewma",
+      "self_information_increment",
+      "node_curvature_score"
+    ],
+    "residual": {
+      "activation": "relu",
+      "architecture": "mpnn",
+      "delta_max": 1.0,
+      "detach_stage1_reference": true,
+      "enabled": true,
+      "freeze_stage1": true,
+      "hidden_dims": [
+        64,
+        64
+      ],
+      "include_curvature_freshness_interaction": false,
+      "include_curvature_mean": false,
+      "include_scenario_context": false,
+      "mpnn": {
+        "aggregation": "curvature_attention_max",
+        "attention_temperature": 0.5,
+        "attention_uniform_mix": 0.0,
+        "bmax": 20.0,
+        "condition_message_on_receiver": true,
+        "edge_freshness_feature": "normalized_version_gap_with_gain",
+        "edge_normalization": "raw_bmax",
+        "message_dim": 16,
+        "message_hidden_dims": [
+          32
+        ],
+        "node_curvature_normalization": "raw_bmax",
+        "update_hidden_dims": [
+          64,
+          64
+        ],
+        "use_curvature_edge_feature": true,
+        "use_node_curvature_score": true,
+        "use_raw_af3_min_edge_curvature": false,
+        "use_sender_node_features": false,
+        "version_gap_tau": null
+      },
+      "use_stage1_reference": true,
+      "zero_init_output": true
+    },
+    "residual_architecture": "mpnn",
+    "stage": 2,
+    "use_curvature_edge_feature": true,
+    "use_node_curvature_score": true,
+    "use_raw_af3_min_edge_curvature": false,
+    "use_sender_node_features": false,
+    "version_gap_tau": null
+  },
+  "actor_curvature_enabled": true,
+  "actor_learning_rate": 0.0001,
+  "best_train_mean_VAoI": 6.735185110755265,
+  "best_validation_Bmax_checkpoint": "result_GNN\\mpnnV3.6_NodeCurv_CurvAttn_ch2_n100_u0.20_b0.30_noMinEdgeCurv\\checkpoints\\best_validation_Bmax\\model",
+  "best_validation_Bmax_mean_VAoI": 7.749393191919191,
+  "best_validation_checkpoint": "result_GNN\\mpnnV3.6_NodeCurv_CurvAttn_ch2_n100_u0.20_b0.30_noMinEdgeCurv\\checkpoints\\best_validation\\model",
+  "best_validation_mean_VAoI": 7.749393191919191,
+  "budget_relative_tolerance": 0.0,
+  "checkpoint": "result_GNN\\mpnnV3.6_NodeCurv_CurvAttn_ch2_n100_u0.20_b0.30_noMinEdgeCurv\\checkpoints\\best_validation\\model",
+  "checkpoint_every_episodes": 20,
+  "checkpoint_mode": "validation_best_only",
+  "common_mode_coefficient": 0.05,
+  "consecutive_tx_scale": 3.0,
+  "critic": {
+    "activation": "relu",
+    "advantage_mode": "node_gae",
+    "architecture": "node_conditioned",
+    "bootstrap_rollout_end": true,
+    "hidden_dims": [
+      64,
+      64
+    ],
+    "include_channel_features": true,
+    "include_curvature_features": true,
+    "include_exact_node_features": true,
+    "include_scenario_context": true,
+    "input_dim": 25,
+    "input_feature_names": [
+      "global_mean_vaoi",
+      "global_std_vaoi",
+      "global_tail5_mean_vaoi",
+      "last_tx_ratio",
+      "log_network_size",
+      "update_probability",
+      "target_tx_ratio",
+      "normalized_degree",
+      "time_since_last_tx",
+      "consecutive_tx_attempts",
+      "congestion_ewma",
+      "incident_bottleneck_max",
+      "incident_bottleneck_mean",
+      "self_information_increment_fraction",
+      "neighbor_confidence_mean",
+      "receiver_vaoi_mean",
+      "receiver_vaoi_tail",
+      "source_vaoi_mean",
+      "source_vaoi_tail",
+      "exact_innovation_fraction_mean",
+      "exact_innovation_fraction_max",
+      "exact_innovation_magnitude_mean",
+      "exact_bottleneck_weighted_innovation",
+      "mean_link_margin",
+      "weak_link_margin"
+    ]
+  },
+  "critic_architecture": "node_conditioned",
+  "critic_curvature_enabled": true,
+  "critic_input_dim": 25,
+  "critic_input_feature_names": [
+    "global_mean_vaoi",
+    "global_std_vaoi",
+    "global_tail5_mean_vaoi",
+    "last_tx_ratio",
+    "log_network_size",
+    "update_probability",
+    "target_tx_ratio",
+    "normalized_degree",
+    "time_since_last_tx",
+    "consecutive_tx_attempts",
+    "congestion_ewma",
+    "incident_bottleneck_max",
+    "incident_bottleneck_mean",
+    "self_information_increment_fraction",
+    "neighbor_confidence_mean",
+    "receiver_vaoi_mean",
+    "receiver_vaoi_tail",
+    "source_vaoi_mean",
+    "source_vaoi_tail",
+    "exact_innovation_fraction_mean",
+    "exact_innovation_fraction_max",
+    "exact_innovation_magnitude_mean",
+    "exact_bottleneck_weighted_innovation",
+    "mean_link_margin",
+    "weak_link_margin"
+  ],
+  "critic_learning_rate": 0.0003,
+  "curvature_ablation_mode": false,
+  "episodes": 500,
+  "initial_checkpoint": null,
+  "initial_multiplier": 0.0,
+  "model_version": "curvature_stage2_mpnn_v3_6_node_curvature",
+  "mpnn_disabled_edge_feature": null,
+  "multiplier_error_clip": 1.0,
+  "multiplier_learning_rate": 0.01,
+  "multiplier_max": 0.15,
+  "neighbor_confidence_time_constant": 20.0,
+  "node_counts": [
+    100
+  ],
+  "per_node_cap_multiplier": 1.5,
+  "probability_budget_coefficient": 0.8,
+  "restored_variables": [],
+  "target_tx_ratios": [
+    0.3
+  ],
+  "training_diagnostics": {
+    "enabled": false,
+    "every_episodes": 20,
+    "include_mpnn_attention": false,
+    "include_mpnn_messages": false
+  },
+  "tx_ratio_ema_beta": 0.5,
+  "update_multiplier": true,
+  "update_probabilities": [
+    0.2
+  ],
+  "use_budget_advantage": true,
+  "validation_bmax": 0.3,
+  "validation_enabled": true,
+  "validation_evaluate_baselines": false,
+  "validation_every_episodes": 10,
+  "validation_trigger": "every_episodes",
+  "vaoi_reward_scale": 0.1
+}

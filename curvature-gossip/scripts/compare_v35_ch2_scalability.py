@@ -367,8 +367,8 @@ def plot_scalability(summary_rows, output_root):
     axis.tick_params(axis="both", labelsize=FONT_SIZES["tick"])
     axis.grid(True, axis="y", linestyle="--", linewidth=0.7, alpha=0.35)
     axis.set_axisbelow(True)
-    # Keep the explanatory probability note visible in the upper-left corner.
-    axis.legend(fontsize=FONT_SIZES["legend"], frameon=True, loc="upper right", ncol=1)
+    # Put the six-entry legend in the open lower-right area of the figure.
+    axis.legend(fontsize=FONT_SIZES["legend"], frameon=True, loc="lower right", ncol=1)
     figure.tight_layout()
     png_path = output_root / "scalability_v35_ch2.png"
     pdf_path = output_root / "scalability_v35_ch2.pdf"

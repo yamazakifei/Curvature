@@ -314,6 +314,23 @@ w_ij = softmax_j(clipped_bottleneck_score_ij / attention_temperature)
 当前 V3.5 配置为
 `configs/GNN/mpnnV3.5_ch1_CurvAttn.yaml`。
 
+### V3.6 MPNN 节点级曲率特征
+
+V3.6 在 Stage-2 MPNN 的 receiver node feature 中提供两个可独立开关的特征：
+
+```yaml
+      use_node_curvature_score: true
+      use_raw_af3_min_edge_curvature: true
+      node_curvature_normalization: raw_bmax  # 或 local_degree_bound
+```
+
+`node_curvature_score` 对节点 incident AF3 边曲率取最小值的负数，再按配置归一化；
+`raw_af3_min_edge_curvature` 保留该最小边曲率的原始负值。`raw_bmax` 使用
+`min(max(-min_edge_curvature, 0), bmax) / bmax`，`local_degree_bound` 对每条 incident
+边使用 `max(1, deg(i)+deg(j)-4)` 归一化后取最大值。两个开关默认均为 `false`，因此
+旧版 V3.5 配置和 checkpoint 的节点输入宽度保持不变。示例配置为
+`configs/GNN/mpnnV3.6_ch2_CurvAttn_NodeCurv.yaml`。
+
 ### V3.5 edge freshness schema
 
 The V3.5 configuration uses

@@ -69,6 +69,9 @@ STAGE2_MPNN_NODE_FEATURE_NAMES = (
     "normalized_degree", "time_since_last_tx", "consecutive_tx_attempts",
     "congestion_ewma", "self_information_increment",
 )
+STAGE2_MPNN_CURVATURE_NODE_FEATURE_NAMES = (
+    "node_curvature_score", "raw_af3_min_edge_curvature",
+)
 STAGE2_MPNN_EDGE_FEATURE_NAMES = (
     "neighbor_freshness_gain", "neighbor_estimate_confidence", "clipped_bottleneck_score",
 )
@@ -193,6 +196,48 @@ def stage2_mpnn_edge_feature_names(
         "neighbor_estimate_confidence",
         "clipped_bottleneck_score" if use_curvature_edge_feature else "disabled_zero_placeholder",
     )
+
+
+def stage2_mpnn_node_feature_names(
+    use_node_curvature_score: bool = False,
+    use_raw_af3_min_edge_curvature: bool = False,
+) -> Tuple[str, ...]:
+    """Return the configured Stage-2 MPNN receiver-node feature schema."""
+    names = list(STAGE2_MPNN_NODE_FEATURE_NAMES)
+    if use_node_curvature_score:
+        names.append(STAGE2_MPNN_CURVATURE_NODE_FEATURE_NAMES[0])
+    if use_raw_af3_min_edge_curvature:
+        names.append(STAGE2_MPNN_CURVATURE_NODE_FEATURE_NAMES[1])
+    return tuple(names)
+
+
+def _node_curvature_features(
+    observation: NodeObservation,
+    observations: Sequence[NodeObservation],
+    bmax: float,
+    normalization: str,
+) -> Tuple[float, float]:
+    """Compute normalized node score and the raw minimum incident AF3 curvature."""
+    curvatures = np.asarray(
+        [observation.incident_curvatures[neighbor] for neighbor in observation.neighbor_ids],
+        dtype=float,
+    )
+    if curvatures.size == 0:
+        return 0.0, 0.0
+    if not np.isfinite(curvatures).all():
+        raise ValueError("incident AF3 curvatures must be finite")
+    raw_score = max(float(-np.min(curvatures)), 0.0)
+    if normalization == "raw_bmax":
+        normalized = min(raw_score, bmax) / bmax
+    else:
+        node_rows = {int(item.node_id): item for item in observations}
+        normalized_values = []
+        for neighbor, curvature in zip(observation.neighbor_ids, curvatures):
+            sender_degree = len(node_rows[int(neighbor)].neighbor_ids)
+            denominator = max(1, len(observation.neighbor_ids) + sender_degree - 4)
+            normalized_values.append(min(max(float(-curvature), 0.0) / denominator, 1.0))
+        normalized = max(normalized_values) if normalized_values else 0.0
+    return float(normalized), float(np.min(curvatures))
 
 
 def _edge_freshness_features(
@@ -427,6 +472,9 @@ def encode_stage2_mpnn_observations(
     edge_freshness_feature: str = "binary_fraction",
     version_gap_tau: float = None,
     use_curvature: bool = True,
+    use_node_curvature_score: bool = False,
+    use_raw_af3_min_edge_curvature: bool = False,
+    node_curvature_normalization: str = "raw_bmax",
 ) -> Stage2MPNNEncodedObservations:
     """Encode local state and fixed-width MPNN edge features.
 
@@ -456,6 +504,11 @@ def encode_stage2_mpnn_observations(
     edge_normalization = str(edge_normalization)
     if edge_normalization not in {"raw_bmax", "local_degree_bound"}:
         raise ValueError("unknown MPNN edge normalization: {}".format(edge_normalization))
+    node_curvature_normalization = str(node_curvature_normalization)
+    if node_curvature_normalization not in {"raw_bmax", "local_degree_bound"}:
+        raise ValueError("unknown MPNN node curvature normalization: {}".format(node_curvature_normalization))
+    if (use_node_curvature_score or use_raw_af3_min_edge_curvature) and not use_curvature:
+        raise ValueError("curvature node features require use_curvature=true")
     edge_freshness_feature = _resolve_mpnn_edge_freshness_feature(edge_freshness_feature)
     version_gap_tau = _resolve_version_gap_tau(
         update_probability, neighbor_confidence_time_constant, version_gap_tau
@@ -481,9 +534,24 @@ def encode_stage2_mpnn_observations(
             np.asarray([np.log1p(n_nodes), update_probability, target_tx_ratio], dtype=np.float32),
             (len(observations), 1),
         )
+    curvature_node_features = []
+    if use_node_curvature_score or use_raw_af3_min_edge_curvature:
+        for observation in observations:
+            curvature_node_features.append(_node_curvature_features(
+                observation, observations, bmax, node_curvature_normalization,
+            ))
+        curvature_node_features = np.asarray(curvature_node_features, dtype=np.float32)
+        additions = []
+        if use_node_curvature_score:
+            additions.append(curvature_node_features[:, 0:1])
+        if use_raw_af3_min_edge_curvature:
+            additions.append(curvature_node_features[:, 1:2])
+        node_context = np.concatenate([node_context, *additions], axis=1)
     if include_scenario_context:
         node_context = np.concatenate([node_context, scenario_context], axis=1)
-    expected_width = 8 if include_scenario_context else 5
+    expected_width = len(stage2_mpnn_node_feature_names(
+        use_node_curvature_score, use_raw_af3_min_edge_curvature,
+    )) + (3 if include_scenario_context else 0)
     if node_context.shape != (len(observations), expected_width) or not np.isfinite(node_context).all():
         raise ValueError("MPNN node context must be finite with the configured fixed width")
 

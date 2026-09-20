@@ -241,6 +241,9 @@ def _run_neural_scenario(
                     edge_freshness_feature=str(residual.get("mpnn", {}).get("edge_freshness_feature", "binary_fraction")),
                     version_gap_tau=residual.get("mpnn", {}).get("version_gap_tau"),
                     use_curvature=model.actor_curvature_enabled,
+                    use_node_curvature_score=bool(residual.get("mpnn", {}).get("use_node_curvature_score", False)),
+                    use_raw_af3_min_edge_curvature=bool(residual.get("mpnn", {}).get("use_raw_af3_min_edge_curvature", False)),
+                    node_curvature_normalization=str(residual.get("mpnn", {}).get("node_curvature_normalization", "raw_bmax")),
                 )
             else:
                 encoded = encode_stage2_observations(

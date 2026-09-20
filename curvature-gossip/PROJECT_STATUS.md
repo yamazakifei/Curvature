@@ -1,5 +1,14 @@
 # Project Status
 
+## V3.6 Stage-2 node curvature features (2026-09-19)
+
+Added optional MPNN receiver-node features for the node-level AF3 curvature
+score and the raw minimum incident AF3 edge curvature. The score is computed
+as the negative minimum incident AF3 edge curvature and supports
+`raw_bmax`/`local_degree_bound` normalization through YAML. Both features are
+disabled by default for V3.5 compatibility; the enabled example is
+`configs/GNN/mpnnV3.6_ch2_CurvAttn_NodeCurv.yaml`.
+
 ## V3.5 ch2 community scalability comparison (2026-09-17)
 
 Added `scripts/compare_v35_ch2_scalability.py` and generated

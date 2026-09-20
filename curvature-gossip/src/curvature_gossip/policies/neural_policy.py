@@ -58,6 +58,9 @@ class NeuralCTDEPolicy(DistributedBroadcastPolicy):
                     edge_freshness_feature=str(residual.get("mpnn", {}).get("edge_freshness_feature", "binary_fraction")),
                     version_gap_tau=residual.get("mpnn", {}).get("version_gap_tau"),
                     use_curvature=use_curvature,
+                    use_node_curvature_score=bool(residual.get("mpnn", {}).get("use_node_curvature_score", False)),
+                    use_raw_af3_min_edge_curvature=bool(residual.get("mpnn", {}).get("use_raw_af3_min_edge_curvature", False)),
+                    node_curvature_normalization=str(residual.get("mpnn", {}).get("node_curvature_normalization", "raw_bmax")),
                 )
             return encode_stage2_observations(
                 observations, self.target_tx_ratio, self.update_probability,
